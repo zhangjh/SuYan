@@ -1,0 +1,23 @@
+# ime_pinyin.dict.yaml
+# 跨平台输入法 - 简体拼音词库
+# 引用雾凇拼音词库
+
+---
+name: ime_pinyin
+version: "1.0.0"
+sort: by_weight
+use_preset_vocabulary: false
+import_tables:
+  # 基础词库（来自 rime-ice）
+  - rime_ice.8105      # 通用规范汉字表
+  - rime_ice.41448     # 通用规范汉字表扩展
+  - rime_ice.base      # 基础词库
+  - rime_ice.ext       # 扩展词库
+  - rime_ice.tencent   # 腾讯词向量词库
+  - rime_ice.others    # 其他词库
+...
+
+# 自定义词条（可在此添加）
+# 格式: 词条<TAB>拼音<TAB>权重
+# 示例:
+# 跨平台	kua ping tai	100

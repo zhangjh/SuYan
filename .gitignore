@@ -1,0 +1,97 @@
+# Build directories
+build/
+out/
+cmake-build-*/
+
+# IDE files
+.idea/
+.vscode/
+*.xcworkspace/
+*.xcuserdata/
+*.suo
+*.user
+*.sln.docstates
+
+# Compiled files
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+
+# Test output
+Testing/
+test-results/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# SQLite database files (local development)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Log files
+*.log
+
+# Package/Installer output files
+*.pkg
+*.dmg
+*.msi
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+output/macos/*.pkg
+output/macos/component.plist
+output/windows/*.exe
+output/windows/*.msi
+
+# Squirrel build artifacts (inside submodule, but listed for clarity)
+deps/squirrel/build/
+deps/squirrel/bin/
+deps/squirrel/lib/
+deps/squirrel/librime/
+deps/squirrel/Frameworks/
+deps/squirrel/download/
+deps/squirrel/SharedSupport/
+deps/squirrel/data/opencc/
+deps/squirrel/data/plum/
+deps/squirrel/package/*.pkg
+
+# Weasel build artifacts
+deps/weasel/build/
+deps/weasel/output/
+deps/weasel/lib/
+
+# librime build artifacts
+deps/librime/build/
+deps/librime/dist/
+deps/librime/share/
+
+# Downloaded dependencies (will be downloaded during build)
+*.tar.bz2
+*.tar.xz
+
+# Temporary files
+*~
+*.swp
+*.swo
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+.env
+.venv/
