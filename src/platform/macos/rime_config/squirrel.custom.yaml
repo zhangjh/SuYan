@@ -1,0 +1,132 @@
+# squirrel.custom.yaml
+# 跨平台输入法 - Squirrel 外观配置
+
+patch:
+  # 键盘布局
+  keyboard_layout: default
+
+  # 通知设置
+  show_notifications_when: appropriate
+
+  # 外观样式
+  style:
+    color_scheme: ime_light
+    color_scheme_dark: ime_dark
+    
+    # 候选词布局
+    candidate_list_layout: stacked  # stacked | linear
+    text_orientation: horizontal    # horizontal | vertical
+    
+    # 内嵌编辑
+    inline_preedit: true
+    inline_candidate: false
+    
+    # 窗口设置
+    memorize_size: true
+    mutual_exclusive: false
+    translucency: false
+    show_paging: true
+    
+    # 圆角和边框
+    corner_radius: 8
+    hilited_corner_radius: 4
+    border_height: 4
+    border_width: 4
+    
+    # 间距
+    line_spacing: 6
+    spacing: 10
+    shadow_size: 0
+    
+    # 候选词格式
+    candidate_format: '[label]. [candidate] [comment]'
+    
+    # 字体设置
+    font_face: 'PingFang SC'
+    font_point: 16
+    label_font_face: 'PingFang SC'
+    label_font_point: 14
+    comment_font_face: 'PingFang SC'
+    comment_font_point: 14
+
+  # 自定义配色方案 - 浅色
+  preset_color_schemes/ime_light:
+    name: 跨平台输入法／浅色
+    author: 跨平台输入法项目
+    
+    # 背景和边框
+    back_color: 0xFFFFFF
+    border_color: 0xE0E0E0
+    
+    # 文字颜色
+    text_color: 0x333333
+    candidate_text_color: 0x333333
+    label_color: 0x888888
+    comment_text_color: 0x999999
+    
+    # 高亮颜色
+    hilited_text_color: 0x333333
+    hilited_back_color: 0xF5F5F5
+    hilited_candidate_text_color: 0xFFFFFF
+    hilited_candidate_back_color: 0x4A90D9
+    hilited_candidate_label_color: 0xFFFFFF
+    hilited_comment_text_color: 0xDDDDDD
+
+  # 自定义配色方案 - 深色
+  preset_color_schemes/ime_dark:
+    name: 跨平台输入法／深色
+    author: 跨平台输入法项目
+    
+    # 背景和边框
+    back_color: 0x2D2D2D
+    border_color: 0x404040
+    
+    # 文字颜色
+    text_color: 0xE0E0E0
+    candidate_text_color: 0xE0E0E0
+    label_color: 0x888888
+    comment_text_color: 0x777777
+    
+    # 高亮颜色
+    hilited_text_color: 0xE0E0E0
+    hilited_back_color: 0x3D3D3D
+    hilited_candidate_text_color: 0xFFFFFF
+    hilited_candidate_back_color: 0x4A90D9
+    hilited_candidate_label_color: 0xFFFFFF
+    hilited_comment_text_color: 0xAAAAAA
+
+  # 应用特定设置
+  app_options:
+    # 终端应用默认英文模式
+    com.apple.Terminal:
+      ascii_mode: true
+      no_inline: true
+    com.googlecode.iterm2:
+      ascii_mode: true
+      no_inline: true
+    # 代码编辑器默认英文模式
+    com.microsoft.VSCode:
+      ascii_mode: true
+    com.apple.dt.Xcode:
+      ascii_mode: true
+    com.sublimetext.3:
+      ascii_mode: true
+    com.sublimetext.4:
+      ascii_mode: true
+    # Vim 模式支持
+    org.vim.MacVim:
+      ascii_mode: true
+      no_inline: true
+      vim_mode: true
+    # Spotlight 和 Alfred 默认英文
+    com.apple.Spotlight:
+      ascii_mode: true
+    com.runningwithcrayons.Alfred:
+      ascii_mode: true
+    # 浏览器内嵌模式修复
+    com.google.Chrome:
+      inline: true
+    com.apple.Safari:
+      inline: true
+    com.microsoft.edgemac:
+      inline: true

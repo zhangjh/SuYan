@@ -1,0 +1,18 @@
+# Rime schema
+# encoding: utf-8
+# 英文输入方案 (来自 rime-ice)
+
+schema:
+  schema_id: melt_eng
+  name: 英文
+  version: "1.0.0"
+  author:
+    - 基于 rime-ice
+  description: |
+    英文输入方案，作为次翻译器挂载到拼音方案
+
+translator:
+  dictionary: melt_eng
+  enable_sentence: false
+  enable_user_dict: false
+  initial_quality: 1.0

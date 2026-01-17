@@ -1,0 +1,12 @@
+# Rime dictionary
+# encoding: utf-8
+# 英文词库 (来自 rime-ice)
+
+---
+name: melt_eng
+version: "1.0.0"
+sort: by_weight
+import_tables:
+  - en_dicts/en
+  - en_dicts/en_ext
+...

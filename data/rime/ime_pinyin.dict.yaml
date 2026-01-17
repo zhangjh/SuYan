@@ -1,0 +1,63 @@
+# Rime dictionary
+# encoding: utf-8
+# 跨平台输入法 - 简体拼音词库
+# 基于 rime-ice (雾凇拼音) 词库
+
+---
+name: ime_pinyin
+version: "1.0.0"
+sort: by_weight
+use_preset_vocabulary: false
+import_tables:
+  # 字表 - 通用规范汉字表 8105 字
+  - cn_dicts/8105
+  # 基础词库
+  - cn_dicts/base
+  # 扩展词库
+  - cn_dicts/ext
+  # 腾讯词向量词库（大词库）
+  - cn_dicts/tencent
+  # 其他词汇
+  - cn_dicts/others
+...
+
+# 大写字母支持（用于中英混输）
+A	A
+B	B
+C	C
+D	D
+E	E
+F	F
+G	G
+H	H
+I	I
+J	J
+K	K
+L	L
+M	M
+N	N
+O	O
+P	P
+Q	Q
+R	R
+S	S
+T	T
+U	U
+V	V
+W	W
+X	X
+Y	Y
+Z	Z
+
+# 数字支持（用于中文数字混输）
+0	ling
+1	yi
+1	yao
+2	er
+3	san
+4	si
+5	wu
+6	liu
+7	qi
+8	ba
+9	jiu

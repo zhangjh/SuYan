@@ -1,0 +1,53 @@
+#!/bin/bash
+# IME Pinyin macOS Post-Installation Script
+#
+# This script runs after the package is installed and performs:
+# 1. Kill any running IME process
+# 2. Register the input source with the system
+# 3. Pre-build RIME data (optional)
+# 4. Enable and select the input source
+
+set -e
+
+# Get the current logged-in user
+login_user=$(/usr/bin/stat -f%Su /dev/console)
+
+# Define paths
+ime_app_root="${DSTROOT}/IMEPinyin.app"
+ime_executable="${ime_app_root}/Contents/MacOS/IMEPinyin"
+rime_package_installer="${ime_app_root}/Contents/MacOS/rime-install"
+rime_shared_data_path="${ime_app_root}/Contents/SharedSupport"
+
+echo "IME Pinyin Post-Installation"
+echo "============================"
+echo "User: ${login_user}"
+echo "App Root: ${ime_app_root}"
+
+# Kill any existing IME process
+echo "Stopping existing IME process..."
+/usr/bin/sudo -u "${login_user}" /usr/bin/killall IMEPinyin > /dev/null 2>&1 || true
+# Also kill Squirrel if running (in case of migration)
+/usr/bin/sudo -u "${login_user}" /usr/bin/killall Squirrel > /dev/null 2>&1 || true
+
+# Wait a moment for process to terminate
+sleep 1
+
+# Register the input source
+echo "Registering input source..."
+"${ime_executable}" --register-input-source
+
+# Pre-build RIME data unless disabled
+if [ -z "${RIME_NO_PREBUILD}" ]; then
+    echo "Pre-building RIME data..."
+    pushd "${rime_shared_data_path}" > /dev/null
+    "${ime_executable}" --build
+    popd > /dev/null
+fi
+
+# Enable and select the input source
+echo "Enabling input source..."
+/usr/bin/sudo -u "${login_user}" "${ime_executable}" --enable-input-source
+/usr/bin/sudo -u "${login_user}" "${ime_executable}" --select-input-source
+
+echo "Post-installation completed successfully!"
+echo "Please log out and log back in to activate the input method."
