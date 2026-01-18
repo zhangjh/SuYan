@@ -53,10 +53,10 @@ Thumbs.db
 *.tar.gz
 *.tar.bz2
 *.tar.xz
-output/macos/*.pkg
-output/macos/component.plist
-output/windows/*.exe
-output/windows/*.msi
+output/
+
+# Rime installation info (generated during build/install)
+installation.yaml
 
 # Squirrel build artifacts (inside submodule, but listed for clarity)
 deps/squirrel/build/

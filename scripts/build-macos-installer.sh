@@ -1,5 +1,5 @@
 #!/bin/bash
-# IME Pinyin macOS Full Build Script
+# macOS Full Build Script
 #
 # This script builds the complete macOS installer including:
 #   1. Download prebuilt librime (with plugins)
@@ -18,8 +18,15 @@
 #   sign      - Sign and notarize (requires DEV_ID env var)
 #
 # Environment Variables:
-#   IME_VERSION   - Version number (default: 1.0.0)
-#   DEV_ID        - Apple Developer ID for signing
+#   IME_VERSION           - Version number (default: 1.0.0)
+#   IME_BRAND_NAME        - App display name (default: InputZ)
+#   IME_BRAND_IDENTIFIER  - Bundle identifier (default: cn.zhangjh.inputmethod.InputZ)
+#                           NOTE: Must contain "inputmethod" for macOS recognition
+#   DEV_ID                - Apple Developer ID for signing
+#
+# Examples:
+#   ./build-macos-installer.sh all
+#   IME_BRAND_NAME=智拼 IME_BRAND_IDENTIFIER=cn.zhangjh.zhipin ./build-macos-installer.sh all
 #
 # Prerequisites:
 #   - Xcode Command Line Tools
@@ -27,8 +34,14 @@
 
 set -e
 
+# Brand configuration (can be overridden by environment variables)
+export IME_BRAND_NAME="${IME_BRAND_NAME:-InputZ}"
+# Note: The identifier MUST contain "inputmethod" for macOS to recognize it as an input method
+# Format: domain.company.inputmethod.name (e.g., cn.zhangjh.inputmethod.InputZ)
+export IME_BRAND_IDENTIFIER="${IME_BRAND_IDENTIFIER:-cn.zhangjh.inputmethod.InputZ}"
+
 echo "============================================"
-echo "IME Pinyin macOS Full Build"
+echo "${IME_BRAND_NAME} macOS Full Build"
 echo "============================================"
 echo ""
 
@@ -45,6 +58,7 @@ RIME_GIT_HASH="a251145"
 SPARKLE_VERSION="2.6.2"
 
 echo "Project Root: ${PROJECT_ROOT}"
+echo "Brand: ${IME_BRAND_NAME} (${IME_BRAND_IDENTIFIER})"
 echo "Version: ${IME_VERSION}"
 echo "librime Version: ${RIME_VERSION}"
 echo ""
@@ -244,6 +258,28 @@ if [ $BUILD_DEPS -eq 1 ]; then
     # Copy opencc data
     cp -R librime/share/opencc SharedSupport/
     
+    # Copy project custom Rime configurations (overrides default)
+    if [ -d "${PROJECT_ROOT}/data/rime" ]; then
+        echo "Copying custom Rime configurations..."
+        cp -R "${PROJECT_ROOT}/data/rime/"* SharedSupport/
+        echo "  - Custom schemas and configurations applied"
+    fi
+    
+    # Copy rime-ice dictionaries for ime_pinyin schema
+    if [ -d "${PROJECT_ROOT}/deps/rime-ice/cn_dicts" ]; then
+        echo "Copying rime-ice Chinese dictionaries..."
+        mkdir -p SharedSupport/cn_dicts
+        cp -R "${PROJECT_ROOT}/deps/rime-ice/cn_dicts/"* SharedSupport/cn_dicts/
+        echo "  - Chinese dictionaries copied"
+    fi
+    
+    if [ -d "${PROJECT_ROOT}/deps/rime-ice/en_dicts" ]; then
+        echo "Copying rime-ice English dictionaries..."
+        mkdir -p SharedSupport/en_dicts
+        cp -R "${PROJECT_ROOT}/deps/rime-ice/en_dicts/"* SharedSupport/en_dicts/
+        echo "  - English dictionaries copied"
+    fi
+    
     echo ""
     echo "Dependencies downloaded and configured successfully."
     echo "  - librime ${RIME_VERSION} (with lua, octagram, predict plugins)"
@@ -256,7 +292,7 @@ fi
 if [ $BUILD_APP -eq 1 ]; then
     echo ""
     echo "============================================"
-    echo "Building Squirrel App"
+    echo "Building ${IME_BRAND_NAME} App"
     echo "============================================"
     echo ""
     
@@ -269,6 +305,82 @@ if [ $BUILD_APP -eq 1 ]; then
         exit 1
     fi
     
+    # ============================================
+    # Apply brand customization to source code
+    # ============================================
+    echo "Applying brand customization to source code..."
+    
+    # Backup original files
+    cp sources/InputSource.swift sources/InputSource.swift.bak
+    cp sources/Main.swift sources/Main.swift.bak
+    cp resources/Info.plist resources/Info.plist.bak
+    
+    # Replace input source IDs in InputSource.swift
+    sed -i '' "s|im.rime.inputmethod.Squirrel.Hans|${IME_BRAND_IDENTIFIER}.Hans|g" sources/InputSource.swift
+    sed -i '' "s|im.rime.inputmethod.Squirrel.Hant|${IME_BRAND_IDENTIFIER}.Hant|g" sources/InputSource.swift
+    sed -i '' "s|Squirrel method|${IME_BRAND_NAME} method|g" sources/InputSource.swift
+    
+    # Replace app directory path in Main.swift
+    sed -i '' "s|/Library/Input Library/Squirrel.app|/Library/Input Methods/${IME_BRAND_NAME}.app|g" sources/Main.swift
+    sed -i '' "s|rime.squirrel|rime.${IME_BRAND_NAME}|g" sources/Main.swift
+    
+    # Replace app_name in SquirrelApplicationDelegate.swift (for Rime initialization)
+    cp sources/SquirrelApplicationDelegate.swift sources/SquirrelApplicationDelegate.swift.bak
+    sed -i '' "s|rime.squirrel|rime.${IME_BRAND_NAME}|g" sources/SquirrelApplicationDelegate.swift
+    
+    # Replace identifiers in Info.plist
+    sed -i '' "s|Squirrel_Connection|${IME_BRAND_NAME}_Connection|g" resources/Info.plist
+    
+    # Update bundle name and identifier
+    /usr/libexec/PlistBuddy -c "Set :CFBundleName ${IME_BRAND_NAME}" resources/Info.plist
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${IME_BRAND_IDENTIFIER}" resources/Info.plist
+    /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${IME_BRAND_NAME}" resources/Info.plist
+    /usr/libexec/PlistBuddy -c "Set :TISInputSourceID ${IME_BRAND_IDENTIFIER}" resources/Info.plist
+    
+    # Note: InputMethodServerControllerClass must match the Swift module name in the binary.
+    # The Swift module name is determined by PRODUCT_MODULE_NAME (defaults to target name "Squirrel"),
+    # NOT by PRODUCT_NAME. So we keep it as "Squirrel.SquirrelInputController".
+    # Do NOT change these values unless you also change PRODUCT_MODULE_NAME in xcodebuild.
+    
+    # Disable Sparkle auto-update (we'll use our own mechanism)
+    /usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" resources/Info.plist 2>/dev/null || true
+    
+    # ============================================
+    # Update ComponentInputModeDict with new identifiers
+    # This is critical for macOS to recognize the input source
+    # ============================================
+    PLIST_FILE="resources/Info.plist"
+    OLD_HANS_ID="im.rime.inputmethod.Squirrel.Hans"
+    OLD_HANT_ID="im.rime.inputmethod.Squirrel.Hant"
+    NEW_HANS_ID="${IME_BRAND_IDENTIFIER}.Hans"
+    NEW_HANT_ID="${IME_BRAND_IDENTIFIER}.Hant"
+    
+    echo "Updating ComponentInputModeDict..."
+    echo "  Hans: ${OLD_HANS_ID} -> ${NEW_HANS_ID}"
+    echo "  Hant: ${OLD_HANT_ID} -> ${NEW_HANT_ID}"
+    
+    # Create new Hans entry by copying old one
+    /usr/libexec/PlistBuddy -c "Copy :ComponentInputModeDict:tsInputModeListKey:${OLD_HANS_ID} :ComponentInputModeDict:tsInputModeListKey:${NEW_HANS_ID}" "${PLIST_FILE}"
+    /usr/libexec/PlistBuddy -c "Set :ComponentInputModeDict:tsInputModeListKey:${NEW_HANS_ID}:TISInputSourceID ${NEW_HANS_ID}" "${PLIST_FILE}"
+    /usr/libexec/PlistBuddy -c "Delete :ComponentInputModeDict:tsInputModeListKey:${OLD_HANS_ID}" "${PLIST_FILE}"
+    
+    # Create new Hant entry by copying old one
+    /usr/libexec/PlistBuddy -c "Copy :ComponentInputModeDict:tsInputModeListKey:${OLD_HANT_ID} :ComponentInputModeDict:tsInputModeListKey:${NEW_HANT_ID}" "${PLIST_FILE}"
+    /usr/libexec/PlistBuddy -c "Set :ComponentInputModeDict:tsInputModeListKey:${NEW_HANT_ID}:TISInputSourceID ${NEW_HANT_ID}" "${PLIST_FILE}"
+    /usr/libexec/PlistBuddy -c "Delete :ComponentInputModeDict:tsInputModeListKey:${OLD_HANT_ID}" "${PLIST_FILE}"
+    
+    # Update tsVisibleInputModeOrderedArrayKey
+    /usr/libexec/PlistBuddy -c "Set :ComponentInputModeDict:tsVisibleInputModeOrderedArrayKey:0 ${NEW_HANS_ID}" "${PLIST_FILE}"
+    /usr/libexec/PlistBuddy -c "Set :ComponentInputModeDict:tsVisibleInputModeOrderedArrayKey:1 ${NEW_HANT_ID}" "${PLIST_FILE}"
+    
+    echo "Brand customization applied."
+    echo ""
+    
+    # Clean previous build to ensure Info.plist changes take effect
+    echo "Cleaning previous build..."
+    rm -rf build/Build/Products
+    rm -rf build/Build/Intermediates.noindex
+    
     # Build Squirrel
     mkdir -p build
     bash package/add_data_files
@@ -277,11 +389,73 @@ if [ $BUILD_APP -eq 1 ]; then
         -scheme Squirrel \
         -derivedDataPath build \
         COMPILER_INDEX_STORE_ENABLE=YES \
+        PRODUCT_NAME="${IME_BRAND_NAME}" \
+        PRODUCT_BUNDLE_IDENTIFIER="${IME_BRAND_IDENTIFIER}" \
+        INFOPLIST_FILE="${PWD}/resources/Info.plist" \
         build
     
-    if [ $? -ne 0 ]; then
+    BUILD_RESULT=$?
+    
+    # ============================================
+    # Restore original source files
+    # ============================================
+    echo ""
+    echo "Restoring original source files..."
+    mv sources/InputSource.swift.bak sources/InputSource.swift
+    mv sources/Main.swift.bak sources/Main.swift
+    mv sources/SquirrelApplicationDelegate.swift.bak sources/SquirrelApplicationDelegate.swift
+    mv resources/Info.plist.bak resources/Info.plist
+    
+    if [ $BUILD_RESULT -ne 0 ]; then
         echo "ERROR: Failed to build app!"
         exit 1
+    fi
+    
+    # ============================================
+    # Post-build: Update localization files in build output
+    # This must be done AFTER xcodebuild because Xcode copies from source
+    # ============================================
+    echo "Updating localization files in build output..."
+    BUILD_APP_PATH="build/Build/Products/Release/${IME_BRAND_NAME}.app"
+    for lproj in "${BUILD_APP_PATH}/Contents/Resources/"*.lproj; do
+        strings_file="$lproj/InfoPlist.strings"
+        if [ -f "$strings_file" ]; then
+            # Convert to XML for editing
+            plutil -convert xml1 "$strings_file" 2>/dev/null || true
+            # Replace old input source IDs with new ones
+            sed -i '' "s|im\.rime\.inputmethod\.Squirrel|${IME_BRAND_IDENTIFIER}|g" "$strings_file"
+            # Replace display names (Squirrel/鼠须管/鼠鬚管 -> brand name)
+            sed -i '' "s|>鼠须管<|>${IME_BRAND_NAME}<|g" "$strings_file"
+            sed -i '' "s|>鼠鬚管<|>${IME_BRAND_NAME}<|g" "$strings_file"
+            sed -i '' "s|>Squirrel<|>${IME_BRAND_NAME}<|g" "$strings_file"
+            echo "  Updated: $strings_file"
+        fi
+    done
+    
+    # Re-sign the app after modifying resources
+    echo "Re-signing app..."
+    codesign --force --deep --sign - "${BUILD_APP_PATH}"
+    
+    # ============================================
+    # Copy custom Rime configurations to build output
+    # ============================================
+    if [ -d "${PROJECT_ROOT}/data/rime" ]; then
+        echo "Copying custom Rime configurations to build output..."
+        cp -R "${PROJECT_ROOT}/data/rime/"* "${BUILD_APP_PATH}/Contents/SharedSupport/"
+        echo "  - Custom schemas and configurations applied"
+    fi
+    
+    # Copy rime-ice dictionaries to build output
+    if [ -d "${PROJECT_ROOT}/deps/rime-ice/cn_dicts" ]; then
+        echo "Copying rime-ice Chinese dictionaries to build output..."
+        mkdir -p "${BUILD_APP_PATH}/Contents/SharedSupport/cn_dicts"
+        cp -R "${PROJECT_ROOT}/deps/rime-ice/cn_dicts/"* "${BUILD_APP_PATH}/Contents/SharedSupport/cn_dicts/"
+    fi
+    
+    if [ -d "${PROJECT_ROOT}/deps/rime-ice/en_dicts" ]; then
+        echo "Copying rime-ice English dictionaries to build output..."
+        mkdir -p "${BUILD_APP_PATH}/Contents/SharedSupport/en_dicts"
+        cp -R "${PROJECT_ROOT}/deps/rime-ice/en_dicts/"* "${BUILD_APP_PATH}/Contents/SharedSupport/en_dicts/"
     fi
     
     echo "App built successfully."
