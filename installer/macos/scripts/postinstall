@@ -1,5 +1,5 @@
 #!/bin/bash
-# IME Pinyin macOS Post-Installation Script
+# InputZ macOS Post-Installation Script
 #
 # This script runs after the package is installed and performs:
 # 1. Kill any running IME process
@@ -9,12 +9,22 @@
 
 set -e
 
+# Brand configuration - must match make_package.sh
+BRAND_NAME="InputZ"
+
 # Get the current logged-in user
 login_user=$(/usr/bin/stat -f%Su /dev/console)
 
-# Define paths
-ime_app_root="${DSTROOT}/IMEPinyin.app"
-ime_executable="${ime_app_root}/Contents/MacOS/IMEPinyin"
+# Define paths - use fixed install location
+ime_app_root="/Library/Input Methods/${BRAND_NAME}.app"
+ime_executable="${ime_app_root}/Contents/MacOS/${BRAND_NAME}"
+
+# Fallback to Squirrel.app if branded app not found
+if [ ! -d "${ime_app_root}" ]; then
+    ime_app_root="/Library/Input Methods/Squirrel.app"
+    ime_executable="${ime_app_root}/Contents/MacOS/Squirrel"
+fi
+
 rime_package_installer="${ime_app_root}/Contents/MacOS/rime-install"
 rime_shared_data_path="${ime_app_root}/Contents/SharedSupport"
 
@@ -22,32 +32,41 @@ echo "IME Pinyin Post-Installation"
 echo "============================"
 echo "User: ${login_user}"
 echo "App Root: ${ime_app_root}"
+echo "Executable: ${ime_executable}"
 
 # Kill any existing IME process
 echo "Stopping existing IME process..."
-/usr/bin/sudo -u "${login_user}" /usr/bin/killall IMEPinyin > /dev/null 2>&1 || true
-# Also kill Squirrel if running (in case of migration)
+/usr/bin/sudo -u "${login_user}" /usr/bin/killall "${BRAND_NAME}" > /dev/null 2>&1 || true
 /usr/bin/sudo -u "${login_user}" /usr/bin/killall Squirrel > /dev/null 2>&1 || true
 
 # Wait a moment for process to terminate
 sleep 1
 
+# Check if executable exists
+if [ ! -f "${ime_executable}" ]; then
+    echo "WARNING: Executable not found at ${ime_executable}"
+    echo "Skipping input source registration. Please restart your Mac to activate the input method."
+    exit 0
+fi
+
 # Register the input source
 echo "Registering input source..."
-"${ime_executable}" --register-input-source
+"${ime_executable}" --register-input-source || true
 
 # Pre-build RIME data unless disabled
 if [ -z "${RIME_NO_PREBUILD}" ]; then
     echo "Pre-building RIME data..."
-    pushd "${rime_shared_data_path}" > /dev/null
-    "${ime_executable}" --build
-    popd > /dev/null
+    if [ -d "${rime_shared_data_path}" ]; then
+        pushd "${rime_shared_data_path}" > /dev/null
+        "${ime_executable}" --build || true
+        popd > /dev/null
+    fi
 fi
 
 # Enable and select the input source
 echo "Enabling input source..."
-/usr/bin/sudo -u "${login_user}" "${ime_executable}" --enable-input-source
-/usr/bin/sudo -u "${login_user}" "${ime_executable}" --select-input-source
+/usr/bin/sudo -u "${login_user}" "${ime_executable}" --enable-input-source || true
+/usr/bin/sudo -u "${login_user}" "${ime_executable}" --select-input-source || true
 
 echo "Post-installation completed successfully!"
 echo "Please log out and log back in to activate the input method."

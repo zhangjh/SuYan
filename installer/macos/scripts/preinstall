@@ -1,5 +1,5 @@
 #!/bin/bash
-# IME Pinyin macOS Pre-Installation Script
+# InputZ macOS Pre-Installation Script
 #
 # This script runs before the package is installed and performs:
 # 1. Check system requirements
@@ -8,7 +8,10 @@
 
 set -e
 
-echo "IME Pinyin Pre-Installation"
+# Brand configuration
+BRAND_NAME="InputZ"
+
+echo "${BRAND_NAME} Pre-Installation"
 echo "==========================="
 
 # Get the current logged-in user
@@ -22,19 +25,19 @@ major_version=$(echo "${os_version}" | cut -d. -f1)
 echo "macOS Version: ${os_version}"
 
 if [ "${major_version}" -lt 13 ]; then
-    echo "ERROR: IME Pinyin requires macOS 13.0 (Ventura) or later."
+    echo "ERROR: ${BRAND_NAME} requires macOS 13.0 (Ventura) or later."
     echo "Your version: ${os_version}"
     exit 1
 fi
 
 # Define paths
-ime_app_root="/Library/Input Methods/IMEPinyin.app"
+ime_app_root="/Library/Input Methods/${BRAND_NAME}.app"
 user_data_dir="/Users/${login_user}/Library/Rime"
-backup_dir="/tmp/ime-pinyin-backup-$(date +%Y%m%d%H%M%S)"
+backup_dir="/tmp/${BRAND_NAME}-backup-$(date +%Y%m%d%H%M%S)"
 
 # Stop any running IME process
 echo "Stopping existing IME processes..."
-/usr/bin/sudo -u "${login_user}" /usr/bin/killall IMEPinyin > /dev/null 2>&1 || true
+/usr/bin/sudo -u "${login_user}" /usr/bin/killall "${BRAND_NAME}" > /dev/null 2>&1 || true
 /usr/bin/sudo -u "${login_user}" /usr/bin/killall Squirrel > /dev/null 2>&1 || true
 
 # Backup user data if exists
