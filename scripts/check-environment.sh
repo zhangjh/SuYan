@@ -43,6 +43,7 @@ case "$OS" in
         CMAKE_HINT="winget install Kitware.CMake"
         NINJA_HINT="winget install Ninja-build.Ninja"
         CCACHE_HINT="winget install ccache.ccache"
+        XMAKE_HINT="winget install xmake-io.xmake"
         ;;
     *)
         GIT_HINT="apt install git"
@@ -75,6 +76,9 @@ if [[ "$OS" == MINGW* ]] || [[ "$OS" == MSYS* ]] || [[ "$OS" == CYGWIN* ]]; then
         echo "○ Windows SDK: 未找到"
         echo "  提示: 通过 Visual Studio Installer 安装 Windows 10/11 SDK"
     fi
+    
+    # 检查 xmake (Weasel 构建需要)
+    check_tool "xmake" "$XMAKE_HINT" || MISSING=1
 
 elif [ "$OS" == "Darwin" ]; then
     echo ""
@@ -113,11 +117,19 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 check_submodule() {
     local path=$1
     local name=$2
-    if [ -f "$PROJECT_ROOT/$path/CMakeLists.txt" ] || [ -f "$PROJECT_ROOT/$path/Makefile" ]; then
-        echo "✓ $name: 已初始化"
-    else
-        echo "○ $name: 未初始化 (运行 git submodule update --init --recursive)"
+    local submodule_dir="$PROJECT_ROOT/$path"
+    
+    # 检查目录是否存在且不为空（排除只有 .git 文件的情况）
+    if [ -d "$submodule_dir" ]; then
+        local file_count=$(find "$submodule_dir" -maxdepth 1 -type f ! -name ".git" | wc -l)
+        local dir_count=$(find "$submodule_dir" -maxdepth 1 -type d ! -name "." ! -name ".git" | wc -l)
+        if [ "$file_count" -gt 0 ] || [ "$dir_count" -gt 0 ]; then
+            echo "✓ $name: 已初始化"
+            return 0
+        fi
     fi
+    echo "○ $name: 未初始化 (运行 git submodule update --init --recursive)"
+    return 1
 }
 
 check_submodule "deps/librime" "librime"

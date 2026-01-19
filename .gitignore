@@ -75,6 +75,21 @@ deps/squirrel/ime_integration/
 deps/weasel/build/
 deps/weasel/output/
 deps/weasel/lib/
+deps/weasel/lib64/
+deps/weasel/librime/build/
+deps/weasel/librime/dist/
+deps/weasel/PerMonitorHighDPIAware.manifest
+
+# Windows installer staging (binaries copied from weasel build)
+installer/windows/*.exe
+installer/windows/*.dll
+installer/windows/*.ime
+installer/windows/data/cn_dicts/
+installer/windows/data/en_dicts/
+installer/windows/data/lua/
+installer/windows/data/opencc/
+installer/windows/data/*.yaml
+!installer/windows/data/weasel.yaml
 
 # librime build artifacts
 deps/librime/build/
