@@ -45,8 +45,8 @@
 
 ```bash
 # 克隆仓库并初始化子模块
-git clone --recursive <repository-url>
-cd cross-platform-ime
+cd SuYan
+./script/init-submodules.sh
 
 # 或者在已克隆的仓库中初始化子模块
 git submodule update --init --recursive
