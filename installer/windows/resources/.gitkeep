@@ -1,7 +1,0 @@
-# Resource files for Windows installer
-# 
-# Required files:
-# - ime.ico: Application icon (256x256, multi-resolution)
-# - welcome.bmp: Welcome page bitmap (164x314 pixels)
-#
-# These files should be created by the design team before release.
