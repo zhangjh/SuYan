@@ -546,32 +546,6 @@ int SuYanIMK_ConvertModifiers(NSEventModifierFlags modifierFlags) {
 - (NSMenu *)menu {
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@"素言"];
 
-    // 显示当前模式
-    NSString* modeText = @"中文模式";
-    if (g_inputEngine) {
-        InputMode mode = g_inputEngine->getMode();
-        switch (mode) {
-            case InputMode::Chinese:
-                modeText = @"中文模式 ✓";
-                break;
-            case InputMode::English:
-                modeText = @"英文模式 ✓";
-                break;
-            case InputMode::TempEnglish:
-                modeText = @"临时英文模式";
-                break;
-        }
-    }
-    
-    NSMenuItem* modeStatusItem = [[NSMenuItem alloc]
-        initWithTitle:modeText
-        action:nil
-        keyEquivalent:@""];
-    modeStatusItem.enabled = NO;
-    [menu addItem:modeStatusItem];
-    
-    [menu addItem:[NSMenuItem separatorItem]];
-
     NSMenuItem* modeItem = [[NSMenuItem alloc]
         initWithTitle:@"切换中/英文 (Shift)"
         action:@selector(toggleInputMode:)
