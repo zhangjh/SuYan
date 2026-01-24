@@ -1,0 +1,154 @@
+#!/bin/bash
+# ============================================
+# SuYan Input Method - 安装前脚本
+# ============================================
+#
+# 此脚本在安装包内容复制到目标位置之前执行
+# 主要任务：
+#   1. 检查系统版本
+#   2. 停止正在运行的输入法进程
+#   3. 备份用户数据（如果存在旧版本）
+
+set -e
+
+# 日志函数
+log() {
+    echo "[SuYan Preinstall] $1"
+    logger -t "SuYan Installer" "$1"
+}
+
+log "开始执行安装前脚本..."
+
+# ============================================
+# 检查系统版本
+# ============================================
+check_system_version() {
+    local os_version=$(sw_vers -productVersion)
+    local major_version=$(echo "${os_version}" | cut -d. -f1)
+    
+    log "检测到 macOS 版本: ${os_version}"
+    
+    if [ "${major_version}" -lt 13 ]; then
+        log "错误: 需要 macOS 13.0 (Ventura) 或更高版本"
+        exit 1
+    fi
+    
+    log "系统版本检查通过"
+}
+
+# ============================================
+# 停止正在运行的输入法进程
+# ============================================
+stop_running_process() {
+    log "检查并停止正在运行的 SuYan 进程..."
+    
+    # 查找并终止 SuYan 进程
+    local pids=$(pgrep -x "SuYan" 2>/dev/null || true)
+    
+    if [ -n "${pids}" ]; then
+        log "发现正在运行的 SuYan 进程: ${pids}"
+        
+        # 优雅地终止进程
+        for pid in ${pids}; do
+            log "终止进程 ${pid}..."
+            kill -TERM "${pid}" 2>/dev/null || true
+        done
+        
+        # 等待进程退出
+        sleep 2
+        
+        # 如果进程仍在运行，强制终止
+        pids=$(pgrep -x "SuYan" 2>/dev/null || true)
+        if [ -n "${pids}" ]; then
+            log "强制终止残留进程..."
+            for pid in ${pids}; do
+                kill -9 "${pid}" 2>/dev/null || true
+            done
+        fi
+        
+        log "SuYan 进程已停止"
+    else
+        log "没有发现正在运行的 SuYan 进程"
+    fi
+}
+
+# ============================================
+# 备份用户数据
+# ============================================
+backup_user_data() {
+    local user_data_dir="${HOME}/Library/Application Support/SuYan"
+    local backup_dir="${HOME}/Library/Application Support/SuYan.backup.$(date +%Y%m%d%H%M%S)"
+    
+    if [ -d "${user_data_dir}" ]; then
+        log "发现现有用户数据，创建备份..."
+        
+        # 只备份用户词频数据库和配置文件
+        mkdir -p "${backup_dir}"
+        
+        # 备份用户数据库
+        if [ -f "${user_data_dir}/user_data.db" ]; then
+            cp "${user_data_dir}/user_data.db" "${backup_dir}/"
+            log "已备份用户词频数据库"
+        fi
+        
+        # 备份配置文件
+        if [ -f "${user_data_dir}/config.yaml" ]; then
+            cp "${user_data_dir}/config.yaml" "${backup_dir}/"
+            log "已备份配置文件"
+        fi
+        
+        # 备份 RIME 用户数据
+        if [ -d "${user_data_dir}/rime" ]; then
+            cp -R "${user_data_dir}/rime" "${backup_dir}/"
+            log "已备份 RIME 用户数据"
+        fi
+        
+        log "用户数据已备份到: ${backup_dir}"
+    else
+        log "没有发现现有用户数据"
+    fi
+}
+
+# ============================================
+# 检查旧版本
+# ============================================
+check_old_version() {
+    local old_app="/Library/Input Methods/SuYan.app"
+    
+    if [ -d "${old_app}" ]; then
+        log "发现旧版本安装，将被覆盖"
+        
+        # 获取旧版本号
+        local old_version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${old_app}/Contents/Info.plist" 2>/dev/null || echo "unknown")
+        log "旧版本: ${old_version}"
+    fi
+}
+
+# ============================================
+# 主函数
+# ============================================
+main() {
+    log "============================================"
+    log "SuYan Input Method - 安装前脚本"
+    log "============================================"
+    
+    # 检查系统版本
+    check_system_version
+    
+    # 停止正在运行的进程
+    stop_running_process
+    
+    # 检查旧版本
+    check_old_version
+    
+    # 备份用户数据
+    backup_user_data
+    
+    log "安装前脚本执行完成"
+    log "============================================"
+}
+
+# 执行主函数
+main
+
+exit 0

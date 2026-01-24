@@ -1,0 +1,185 @@
+#!/bin/bash
+# ============================================
+# SuYan Input Method - 安装后脚本
+# ============================================
+#
+# 此脚本在安装包内容复制到目标位置之后执行
+# 主要任务：
+#   1. 设置正确的文件权限
+#   2. 注册输入法到系统
+#   3. 恢复用户数据（如果有备份）
+#   4. 清理临时文件
+
+set -e
+
+# 日志函数
+log() {
+    echo "[SuYan Postinstall] $1"
+    logger -t "SuYan Installer" "$1"
+}
+
+log "开始执行安装后脚本..."
+
+# ============================================
+# 配置
+# ============================================
+APP_PATH="/Library/Input Methods/SuYan.app"
+BUNDLE_ID="cn.zhangjh.inputmethod.SuYan"
+INPUT_SOURCE_ID="cn.zhangjh.inputmethod.SuYan"
+
+# ============================================
+# 设置文件权限
+# ============================================
+set_permissions() {
+    log "设置文件权限..."
+    
+    if [ -d "${APP_PATH}" ]; then
+        # 设置所有者为 root:wheel
+        chown -R root:wheel "${APP_PATH}"
+        
+        # 设置目录权限为 755
+        find "${APP_PATH}" -type d -exec chmod 755 {} \;
+        
+        # 设置文件权限为 644
+        find "${APP_PATH}" -type f -exec chmod 644 {} \;
+        
+        # 设置可执行文件权限为 755
+        chmod 755 "${APP_PATH}/Contents/MacOS/SuYan"
+        
+        # 设置 dylib 文件权限为 755
+        find "${APP_PATH}/Contents/Frameworks" -name "*.dylib" -exec chmod 755 {} \; 2>/dev/null || true
+        
+        log "文件权限设置完成"
+    else
+        log "警告: 应用程序路径不存在: ${APP_PATH}"
+    fi
+}
+
+# ============================================
+# 注册输入法
+# ============================================
+register_input_method() {
+    log "注册输入法到系统..."
+    
+    # 使用 TISRegisterInputSource 注册输入法
+    # 这需要通过 AppleScript 或直接调用系统 API
+    # 在 macOS 13+ 中，系统会自动检测 /Library/Input Methods/ 中的输入法
+    
+    # 刷新输入法列表
+    # 注意：这个命令可能需要用户注销/登录才能完全生效
+    
+    # 尝试使用 defaults 命令触发输入法刷新
+    # 这是一个 workaround，不保证在所有情况下都有效
+    
+    log "输入法已安装到: ${APP_PATH}"
+    log "用户需要在系统设置中手动添加输入法"
+}
+
+# ============================================
+# 恢复用户数据
+# ============================================
+restore_user_data() {
+    local user_data_dir="${HOME}/Library/Application Support/SuYan"
+    
+    # 查找最新的备份
+    local latest_backup=$(ls -td "${HOME}/Library/Application Support/SuYan.backup."* 2>/dev/null | head -1)
+    
+    if [ -n "${latest_backup}" ] && [ -d "${latest_backup}" ]; then
+        log "发现用户数据备份: ${latest_backup}"
+        
+        # 创建用户数据目录
+        mkdir -p "${user_data_dir}"
+        
+        # 恢复用户数据库
+        if [ -f "${latest_backup}/user_data.db" ]; then
+            cp "${latest_backup}/user_data.db" "${user_data_dir}/"
+            log "已恢复用户词频数据库"
+        fi
+        
+        # 恢复配置文件
+        if [ -f "${latest_backup}/config.yaml" ]; then
+            cp "${latest_backup}/config.yaml" "${user_data_dir}/"
+            log "已恢复配置文件"
+        fi
+        
+        # 恢复 RIME 用户数据
+        if [ -d "${latest_backup}/rime" ]; then
+            cp -R "${latest_backup}/rime" "${user_data_dir}/"
+            log "已恢复 RIME 用户数据"
+        fi
+        
+        # 设置用户数据目录权限
+        chown -R "${USER}:staff" "${user_data_dir}" 2>/dev/null || true
+        
+        log "用户数据恢复完成"
+    else
+        log "没有发现用户数据备份"
+    fi
+}
+
+# ============================================
+# 清理旧备份
+# ============================================
+cleanup_old_backups() {
+    log "清理旧备份..."
+    
+    # 保留最近 3 个备份，删除更旧的
+    local backups=$(ls -td "${HOME}/Library/Application Support/SuYan.backup."* 2>/dev/null | tail -n +4)
+    
+    if [ -n "${backups}" ]; then
+        for backup in ${backups}; do
+            log "删除旧备份: ${backup}"
+            rm -rf "${backup}"
+        done
+    fi
+}
+
+# ============================================
+# 显示安装完成信息
+# ============================================
+show_completion_info() {
+    log "============================================"
+    log "素言输入法安装完成！"
+    log "============================================"
+    log ""
+    log "要启用输入法，请按以下步骤操作："
+    log "1. 打开「系统设置」"
+    log "2. 选择「键盘」>「输入法」"
+    log "3. 点击「+」按钮"
+    log "4. 选择「中文」>「素言」"
+    log ""
+    log "如果输入法未出现在列表中，请尝试注销并重新登录。"
+    log "============================================"
+}
+
+# ============================================
+# 主函数
+# ============================================
+main() {
+    log "============================================"
+    log "SuYan Input Method - 安装后脚本"
+    log "============================================"
+    
+    # 设置文件权限
+    set_permissions
+    
+    # 注册输入法
+    register_input_method
+    
+    # 恢复用户数据（以当前用户身份运行）
+    # 注意：postinstall 脚本以 root 身份运行，需要特殊处理
+    # restore_user_data
+    
+    # 清理旧备份
+    # cleanup_old_backups
+    
+    # 显示完成信息
+    show_completion_info
+    
+    log "安装后脚本执行完成"
+}
+
+# 执行主函数
+main
+
+exit 0

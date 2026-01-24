@@ -1,0 +1,24 @@
+# SuYan 深色主题配置
+
+name: "深色"
+
+background:
+  color: "#2D2D2D"
+  opacity: 95
+  border_radius: 8
+  border_color: "#404040"
+  border_width: 1
+
+text:
+  font_family: "PingFang SC"
+  font_size: 16
+  color: "#E0E0E0"
+  highlight_text_color: "#FFFFFF"
+  highlight_back_color: "#0A84FF"
+  preedit_color: "#A0A0A0"
+  label_color: "#808080"
+  comment_color: "#808080"
+
+spacing:
+  candidate_spacing: 8
+  padding: 10

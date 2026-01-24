@@ -1,0 +1,24 @@
+# SuYan 浅色主题配置
+
+name: "浅色"
+
+background:
+  color: "#FFFFFF"
+  opacity: 95
+  border_radius: 8
+  border_color: "#E0E0E0"
+  border_width: 1
+
+text:
+  font_family: "PingFang SC"
+  font_size: 16
+  color: "#333333"
+  highlight_text_color: "#FFFFFF"
+  highlight_back_color: "#007AFF"
+  preedit_color: "#666666"
+  label_color: "#999999"
+  comment_color: "#999999"
+
+spacing:
+  candidate_spacing: 8
+  padding: 10
