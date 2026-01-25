@@ -109,9 +109,10 @@ main() {
     fi
     
     # 检查 tag 是否已存在
+    local tag_exists=false
     if git rev-parse "v${new_version}" >/dev/null 2>&1; then
-        log_error "Tag v${new_version} 已存在"
-        exit 1
+        tag_exists=true
+        log_warning "Tag v${new_version} 已存在"
     fi
     
     echo ""
@@ -119,11 +120,22 @@ main() {
     echo ""
     
     # 确认
-    read -p "确认创建 tag v${new_version}？(y/N) " -n 1 -r
+    if [ "${tag_exists}" = true ]; then
+        read -p "Tag 已存在，是否覆盖？(y/N) " -n 1 -r
+    else
+        read -p "确认创建 tag v${new_version}？(y/N) " -n 1 -r
+    fi
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         log_error "已取消"
         exit 1
+    fi
+    
+    # 删除已存在的 tag
+    if [ "${tag_exists}" = true ]; then
+        git tag -d "v${new_version}"
+        git push origin --delete "v${new_version}" 2>/dev/null || true
+        log_info "已删除旧 tag"
     fi
     
     # 创建 tag
