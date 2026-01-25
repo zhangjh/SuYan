@@ -4,6 +4,8 @@
 # ============================================
 #
 # 用法:
+#   sudo /Library/Input\ Methods/SuYan.app/Contents/Resources/uninstall.sh
+#   或
 #   sudo ./scripts/uninstall.sh
 #
 # 此脚本将：
@@ -25,9 +27,10 @@ NC='\033[0m'
 # ============================================
 # 配置
 # ============================================
-APP_PATH="/Library/Input Methods/SuYan.app"
+APP_NAME="SuYan"
+APP_PATH="/Library/Input Methods/${APP_NAME}.app"
 BUNDLE_ID="cn.zhangjh.inputmethod.SuYan"
-USER_DATA_DIR="${HOME}/Library/Application Support/SuYan"
+USER_DATA_DIR="${HOME}/Library/Rime"
 
 # ============================================
 # 日志函数
@@ -63,9 +66,9 @@ check_root() {
 # 停止正在运行的进程
 # ============================================
 stop_process() {
-    log_info "停止 SuYan 进程..."
+    log_info "停止 ${APP_NAME} 进程..."
     
-    local pids=$(pgrep -x "SuYan" 2>/dev/null || true)
+    local pids=$(pgrep -x "${APP_NAME}" 2>/dev/null || true)
     
     if [ -n "${pids}" ]; then
         for pid in ${pids}; do
@@ -76,7 +79,7 @@ stop_process() {
         sleep 2
         
         # 强制终止残留进程
-        pids=$(pgrep -x "SuYan" 2>/dev/null || true)
+        pids=$(pgrep -x "${APP_NAME}" 2>/dev/null || true)
         if [ -n "${pids}" ]; then
             for pid in ${pids}; do
                 kill -9 "${pid}" 2>/dev/null || true
@@ -149,7 +152,7 @@ ask_remove_user_data() {
 main() {
     echo ""
     echo "============================================"
-    echo "  SuYan Input Method - 卸载程序"
+    echo "  ${APP_NAME} Input Method - 卸载程序"
     echo "============================================"
     echo ""
     

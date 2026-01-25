@@ -177,6 +177,15 @@ add_custom_command(TARGET SuYan POST_BUILD
     COMMENT "Copying themes to bundle..."
 )
 
+# 复制卸载脚本到 Resources
+add_custom_command(TARGET SuYan POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_SOURCE_DIR}/scripts/uninstall.sh"
+        "$<TARGET_BUNDLE_DIR:SuYan>/Contents/Resources/uninstall.sh"
+    COMMAND chmod +x "$<TARGET_BUNDLE_DIR:SuYan>/Contents/Resources/uninstall.sh"
+    COMMENT "Copying uninstall script to bundle..."
+)
+
 # ============================================
 # librime 打包到 Frameworks
 # ============================================

@@ -191,11 +191,99 @@ jobs:
           echo "PKG created: ${OUTPUT_DIR}/SuYan-${VERSION}.pkg"
           ls -lh "${OUTPUT_DIR}/"
       
+      - name: Build uninstaller
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          OUTPUT_DIR="output"
+          UNINSTALLER_APP="${OUTPUT_DIR}/SuYan卸载器.app"
+          
+          # 创建 .app 目录结构
+          mkdir -p "${UNINSTALLER_APP}/Contents/MacOS"
+          mkdir -p "${UNINSTALLER_APP}/Contents/Resources"
+          
+          # 创建 Info.plist
+          cat > "${UNINSTALLER_APP}/Contents/Info.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>uninstall</string>
+              <key>CFBundleIdentifier</key>
+              <string>cn.zhangjh.SuYanUninstaller</string>
+              <key>CFBundleName</key>
+              <string>SuYan卸载器</string>
+              <key>CFBundleDisplayName</key>
+              <string>素言输入法卸载器</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleVersion</key>
+              <string>1.0</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>13.0</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          PLIST
+          
+          # 创建可执行脚本
+          cat > "${UNINSTALLER_APP}/Contents/MacOS/uninstall" << 'SCRIPT'
+          #!/bin/bash
+          
+          if [ ! -d "/Library/Input Methods/SuYan.app" ]; then
+              osascript -e 'display dialog "素言输入法未安装或已被卸载。" buttons {"确定"} default button 1 with title "卸载器" with icon caution'
+              exit 0
+          fi
+          
+          RESULT=$(osascript -e 'display dialog "确定要卸载素言输入法吗？\n\n卸载后需要注销或重启才能完全生效。" buttons {"取消", "卸载"} default button 1 with title "素言输入法卸载器" with icon caution')
+          
+          if [[ "$RESULT" != *"卸载"* ]]; then
+              exit 0
+          fi
+          
+          osascript << 'APPLESCRIPT'
+          do shell script "
+          pkill -x SuYan 2>/dev/null || true
+          sleep 1
+          pkill -9 -x SuYan 2>/dev/null || true
+          rm -rf '/Library/Input Methods/SuYan.app'
+          pkgutil --forget cn.zhangjh.inputmethod.SuYan 2>/dev/null || true
+          " with administrator privileges
+          APPLESCRIPT
+          
+          if [ $? -eq 0 ]; then
+              RESULT=$(osascript -e 'display dialog "是否同时删除用户数据（输入习惯、词频等）？\n\n数据位置: ~/Library/Rime" buttons {"保留数据", "删除数据"} default button 1 with title "卸载完成" with icon note')
+              
+              if [[ "$RESULT" == *"删除数据"* ]]; then
+                  rm -rf "${HOME}/Library/Rime"
+              fi
+              
+              osascript -e 'display dialog "素言输入法已成功卸载！\n\n请注销或重启以完成清理。" buttons {"确定"} default button 1 with title "卸载完成" with icon note'
+          else
+              osascript -e 'display dialog "卸载失败，请重试。" buttons {"确定"} default button 1 with title "错误" with icon stop'
+          fi
+          SCRIPT
+          
+          chmod +x "${UNINSTALLER_APP}/Contents/MacOS/uninstall"
+          
+          # 创建 ZIP 包
+          cd "${OUTPUT_DIR}"
+          zip -r "SuYan-Uninstaller-${VERSION}.zip" "SuYan卸载器.app"
+          rm -rf "SuYan卸载器.app"
+          
+          echo "Uninstaller created: ${OUTPUT_DIR}/SuYan-Uninstaller-${VERSION}.zip"
+          ls -lh "${OUTPUT_DIR}/"
+      
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: SuYan-${{ steps.version.outputs.version }}-macos
-          path: output/SuYan-*.pkg
+          path: |
+            output/SuYan-*.pkg
+            output/SuYan-Uninstaller-*.zip
           retention-days: 7
       
       - name: Create GitHub Release (Draft)
@@ -203,15 +291,26 @@ jobs:
         with:
           draft: true
           generate_release_notes: true
-          files: output/SuYan-*.pkg
+          files: |
+            output/SuYan-*.pkg
+            output/SuYan-Uninstaller-*.zip
           name: SuYan v${{ steps.version.outputs.version }}
           body: |
             ## 素言输入法 v${{ steps.version.outputs.version }}
+            
+            ### 下载
+            - `SuYan-${{ steps.version.outputs.version }}.pkg` - 安装包
+            - `SuYan-Uninstaller-${{ steps.version.outputs.version }}.zip` - 卸载器
             
             ### 安装方法
             1. 下载 `SuYan-${{ steps.version.outputs.version }}.pkg`
             2. 双击运行安装程序
             3. 在系统设置 → 键盘 → 输入法中添加「素言输入法」
+            
+            ### 卸载方法
+            1. 下载并解压 `SuYan-Uninstaller-${{ steps.version.outputs.version }}.zip`
+            2. 双击运行「SuYan卸载器」
+            3. 按提示完成卸载
             
             ### 系统要求
             - macOS 13.0 (Ventura) 或更高版本
