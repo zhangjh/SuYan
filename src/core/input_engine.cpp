@@ -215,6 +215,55 @@ bool InputEngine::handleChineseMode(int keyCode, int modifiers) {
             }
         }
         
+        // 数字键选择当前行的候选词（展开模式下）
+        if (keyCode >= '1' && keyCode <= '9') {
+            auto menu = rime.getCandidateMenu(sessionId_);
+            int pageSize = menu.pageSize > 0 ? menu.pageSize : 9;
+            int indexInRow = keyCode - '1';  // 0-based，行内索引
+            
+            // 计算全局索引：当前行 * 每行数量 + 行内索引
+            int totalIndex = currentRow_ * pageSize + indexInRow;
+            
+            if (totalIndex < static_cast<int>(expandedCandidates_.size())) {
+                std::string selectedText = expandedCandidates_[totalIndex].text;
+                std::string currentPinyin = rime.getRawInput(sessionId_);
+                
+                // 使用 RIME 选择候选词
+                int rimeIndex = totalIndex % pageSize;  // 当前页内的索引
+                int targetPage = totalIndex / pageSize;
+                
+                // 先重置到第一页
+                while (menu.pageIndex > 0) {
+                    rime.changePage(sessionId_, true);
+                    menu = rime.getCandidateMenu(sessionId_);
+                }
+                
+                // 切换到目标页
+                while (menu.pageIndex < targetPage && !menu.isLastPage) {
+                    rime.changePage(sessionId_, false);
+                    menu = rime.getCandidateMenu(sessionId_);
+                }
+                
+                // 选择候选词
+                bool success = rime.selectCandidateOnCurrentPage(sessionId_, rimeIndex);
+                if (success) {
+                    std::string commitText = rime.getCommitText(sessionId_);
+                    if (!commitText.empty()) {
+                        if (frequencyLearningEnabled_) {
+                            updateFrequencyForSelectedCandidate(selectedText, currentPinyin);
+                        }
+                        notifyCommitText(commitText);
+                    }
+                }
+                
+                // 重置展开状态
+                resetExpandedState();
+                updateState();
+                notifyStateChanged();
+                return true;
+            }
+        }
+        
         // Escape 键退出展开模式
         if (keyCode == KeyCode::Escape) {
             resetExpandedState();
