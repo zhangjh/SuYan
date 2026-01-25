@@ -1,0 +1,223 @@
+# SuYan Input Method - GitHub Actions 构建发布
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 匹配 v1.0.0, v1.0.1 等格式的 tag
+
+env:
+  QT_VERSION: '6.5.3'
+  LIBRIME_VERSION: '1.16.1'
+
+jobs:
+  build-macos:
+    name: Build macOS PKG
+    runs-on: macos-14  # Apple Silicon runner
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+      
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'mac'
+          target: 'desktop'
+          arch: 'clang_64'
+          cache: true
+      
+      - name: Install dependencies
+        run: |
+          brew install yaml-cpp
+      
+      - name: Download librime
+        run: |
+          echo "Downloading librime ${LIBRIME_VERSION}..."
+          
+          # 获取 macOS universal 包的文件名（文件名包含 commit hash，需要动态获取）
+          ASSET_NAME=$(curl -s "https://api.github.com/repos/rime/librime/releases/tags/${LIBRIME_VERSION}" | \
+            jq -r '.assets[] | select(.name | test("macOS-universal.*\\.tar\\.bz2$")) | .name' | head -1)
+          
+          if [ -z "${ASSET_NAME}" ]; then
+            echo "Error: Could not find macOS universal asset for librime ${LIBRIME_VERSION}"
+            exit 1
+          fi
+          
+          echo "Found asset: ${ASSET_NAME}"
+          
+          curl -L -o librime.tar.bz2 \
+            "https://github.com/rime/librime/releases/download/${LIBRIME_VERSION}/${ASSET_NAME}"
+          
+          # 解压到临时目录
+          mkdir -p librime_temp
+          tar -xjf librime.tar.bz2 -C librime_temp
+          
+          # 查找解压后的目录结构
+          echo "Extracted contents:"
+          find librime_temp -type f -name "*.h" -o -name "*.dylib" | head -20
+          
+          # 复制到 deps 目录
+          mkdir -p deps/librime/include deps/librime/lib
+          
+          # 尝试不同的目录结构
+          if [ -d "librime_temp/dist" ]; then
+            cp librime_temp/dist/include/*.h deps/librime/include/
+            cp librime_temp/dist/lib/librime*.dylib deps/librime/lib/
+          else
+            # 直接在根目录查找
+            find librime_temp -name "*.h" -exec cp {} deps/librime/include/ \;
+            find librime_temp -name "librime*.dylib" -exec cp {} deps/librime/lib/ \;
+          fi
+          
+          # 清理
+          rm -rf librime_temp librime.tar.bz2
+          
+          # 验证
+          echo "=== Include files ==="
+          ls -la deps/librime/include/
+          echo "=== Library files ==="
+          ls -la deps/librime/lib/
+      
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+          # install-qt-action 设置了 Qt6_DIR 环境变量
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${Qt6_DIR}/.." \
+            -DQt6_DIR="${Qt6_DIR}"
+      
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --target SuYan -j$(sysctl -n hw.ncpu)
+      
+      - name: Deploy Qt frameworks
+        run: |
+          cd build
+          cmake --build . --target deploy_qt || {
+            echo "deploy_qt target not found, running macdeployqt manually..."
+            macdeployqt bin/SuYan.app -verbose=2
+          }
+      
+      - name: Verify bundle
+        run: |
+          BUNDLE="build/bin/SuYan.app"
+          
+          echo "Checking bundle structure..."
+          test -d "${BUNDLE}" || { echo "Bundle not found"; exit 1; }
+          test -f "${BUNDLE}/Contents/MacOS/SuYan" || { echo "Executable not found"; exit 1; }
+          test -f "${BUNDLE}/Contents/Info.plist" || { echo "Info.plist not found"; exit 1; }
+          test -d "${BUNDLE}/Contents/SharedSupport/rime" || { echo "RIME data not found"; exit 1; }
+          test -f "${BUNDLE}/Contents/Frameworks/librime.1.dylib" || { echo "librime not found"; exit 1; }
+          
+          echo "Bundle verification passed!"
+      
+      - name: Create PKG installer
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BUNDLE="build/bin/SuYan.app"
+          OUTPUT_DIR="output"
+          PKG_SCRIPTS="scripts/pkg"
+          
+          mkdir -p "${OUTPUT_DIR}"
+          
+          # 创建安装根目录
+          INSTALL_ROOT="${OUTPUT_DIR}/install_root"
+          mkdir -p "${INSTALL_ROOT}/Library/Input Methods"
+          cp -R "${BUNDLE}" "${INSTALL_ROOT}/Library/Input Methods/"
+          
+          # Ad-hoc 签名
+          echo "Signing bundle with ad-hoc signature..."
+          codesign --force --deep --sign - "${INSTALL_ROOT}/Library/Input Methods/SuYan.app" || true
+          
+          # 创建组件包
+          echo "Creating component package..."
+          pkgbuild \
+            --root "${INSTALL_ROOT}" \
+            --identifier "cn.zhangjh.inputmethod.SuYan" \
+            --version "${VERSION}" \
+            --install-location "/" \
+            --scripts "${PKG_SCRIPTS}" \
+            "${OUTPUT_DIR}/SuYan-component.pkg"
+          
+          # 创建分发描述文件
+          cat > "${OUTPUT_DIR}/distribution.xml" << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <installer-gui-script minSpecVersion="2">
+              <title>素言输入法</title>
+              <organization>cn.zhangjh</organization>
+              <domains enable_localSystem="true"/>
+              <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+              <welcome file="welcome.html"/>
+              <conclusion file="conclusion.html"/>
+              <os-version min="13.0"/>
+              <choices-outline>
+                  <line choice="default">
+                      <line choice="cn.zhangjh.inputmethod.SuYan"/>
+                  </line>
+              </choices-outline>
+              <choice id="default"/>
+              <choice id="cn.zhangjh.inputmethod.SuYan" visible="false">
+                  <pkg-ref id="cn.zhangjh.inputmethod.SuYan"/>
+              </choice>
+              <pkg-ref id="cn.zhangjh.inputmethod.SuYan" version="${VERSION}" onConclusion="none">SuYan-component.pkg</pkg-ref>
+          </installer-gui-script>
+          EOF
+          
+          # 创建最终安装包
+          echo "Creating final PKG..."
+          productbuild \
+            --distribution "${OUTPUT_DIR}/distribution.xml" \
+            --package-path "${OUTPUT_DIR}" \
+            --resources "${PKG_SCRIPTS}/resources" \
+            "${OUTPUT_DIR}/SuYan-${VERSION}.pkg"
+          
+          # 清理临时文件
+          rm -rf "${INSTALL_ROOT}"
+          rm -f "${OUTPUT_DIR}/SuYan-component.pkg"
+          rm -f "${OUTPUT_DIR}/distribution.xml"
+          
+          echo "PKG created: ${OUTPUT_DIR}/SuYan-${VERSION}.pkg"
+          ls -lh "${OUTPUT_DIR}/"
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SuYan-${{ steps.version.outputs.version }}-macos
+          path: output/SuYan-*.pkg
+          retention-days: 7
+      
+      - name: Create GitHub Release (Draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: output/SuYan-*.pkg
+          name: SuYan v${{ steps.version.outputs.version }}
+          body: |
+            ## 素言输入法 v${{ steps.version.outputs.version }}
+            
+            ### 安装方法
+            1. 下载 `SuYan-${{ steps.version.outputs.version }}.pkg`
+            2. 双击运行安装程序
+            3. 在系统设置 → 键盘 → 输入法中添加「素言输入法」
+            
+            ### 系统要求
+            - macOS 13.0 (Ventura) 或更高版本
+            
+            ### 注意事项
+            - 首次安装后需要注销或重启才能生效
+            - 如遇到安全提示，请在系统设置 → 隐私与安全性中允许运行
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

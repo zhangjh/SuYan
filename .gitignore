@@ -113,5 +113,5 @@ __pycache__/
 .venv/
 resources/icons/generated/
 
-# Kiro specs (设计文档，不提交)
-.kiro/specs/
+# Kiro IDE 配置
+.kiro/
