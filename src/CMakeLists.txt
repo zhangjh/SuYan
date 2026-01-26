@@ -9,9 +9,6 @@ add_subdirectory(ui)
 # 平台层
 if(APPLE)
     add_subdirectory(platform/macos)
+elseif(WIN32)
+    add_subdirectory(platform/windows)
 endif()
-
-# Windows 平台层（Phase 2）
-# if(WIN32)
-#     add_subdirectory(platform/windows)
-# endif()

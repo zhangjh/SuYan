@@ -87,3 +87,42 @@ if(APPLE)
         "-framework AppKit"
     )
 endif()
+
+# ========== Windows 平台测试 ==========
+
+# 键码转换单元测试
+# Task 2.2: 编写键码转换单元测试
+# Property 1: 键码转换正确性
+# Property 2: 修饰键转换正确性
+# Validates: Requirements 2.1, 2.2
+# 
+# 注意：此测试使用模拟的 Windows API，可在所有平台编译运行
+add_executable(key_converter_test platform/windows/key_converter_test.cpp)
+target_include_directories(key_converter_test PRIVATE 
+    ${CMAKE_SOURCE_DIR}/src/platform/windows
+)
+# 此测试不依赖其他库，使用内置的模拟实现
+
+# 编码转换单元测试
+# Task 3.2: 编写编码转换单元测试
+# Property 4: UTF-8/UTF-16 编码转换往返一致性
+# Validates: Requirements 3.2
+#
+# 注意：此测试在非 Windows 平台使用标准库 codecvt 实现
+add_executable(windows_bridge_encoding_test platform/windows/windows_bridge_encoding_test.cpp)
+target_include_directories(windows_bridge_encoding_test PRIVATE 
+    ${CMAKE_SOURCE_DIR}/src/platform/windows
+)
+# 此测试不依赖其他库，使用内置的编码转换实现
+
+# WindowsBridge 进程名获取单元测试
+# Task 3.7: 编写 WindowsBridge 单元测试
+# Property 6: 进程名格式正确性
+# Validates: Requirements 10.2
+#
+# 注意：此测试在非 Windows 平台使用模拟实现
+add_executable(windows_bridge_process_test platform/windows/windows_bridge_process_test.cpp)
+target_include_directories(windows_bridge_process_test PRIVATE 
+    ${CMAKE_SOURCE_DIR}/src/platform/windows
+)
+# 此测试不依赖其他库，使用内置的模拟实现
