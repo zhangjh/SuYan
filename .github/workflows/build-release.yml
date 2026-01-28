@@ -128,6 +128,74 @@ jobs:
           
           echo "Bundle verification passed!"
       
+      - name: Embed uninstaller
+        run: |
+          BUNDLE="build/bin/SuYan.app"
+          UNINSTALLER="${BUNDLE}/Contents/Resources/Uninstaller.app"
+          
+          mkdir -p "${UNINSTALLER}/Contents/MacOS"
+          mkdir -p "${UNINSTALLER}/Contents/Resources"
+          
+          cat > "${UNINSTALLER}/Contents/Info.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>uninstall</string>
+              <key>CFBundleIdentifier</key>
+              <string>cn.zhangjh.SuYanUninstaller</string>
+              <key>CFBundleName</key>
+              <string>卸载素言输入法</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleVersion</key>
+              <string>1.0</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>13.0</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          PLIST
+          
+          cat > "${UNINSTALLER}/Contents/MacOS/uninstall" << 'SCRIPT'
+          #!/bin/bash
+          if [ ! -d "/Library/Input Methods/SuYan.app" ]; then
+              osascript -e 'display dialog "素言输入法未安装或已被卸载。" buttons {"确定"} default button 1 with title "卸载器" with icon caution'
+              exit 0
+          fi
+          
+          RESULT=$(osascript -e 'display dialog "确定要卸载素言输入法吗？\n\n卸载后需要注销或重启才能完全生效。" buttons {"取消", "卸载"} default button 1 with title "素言输入法卸载器" with icon caution')
+          
+          if [[ "$RESULT" != *"卸载"* ]]; then
+              exit 0
+          fi
+          
+          osascript << 'APPLESCRIPT'
+          do shell script "
+          pkill -x SuYan 2>/dev/null || true
+          sleep 1
+          pkill -9 -x SuYan 2>/dev/null || true
+          rm -rf '/Library/Input Methods/SuYan.app'
+          pkgutil --forget cn.zhangjh.inputmethod.SuYan 2>/dev/null || true
+          " with administrator privileges
+          APPLESCRIPT
+          
+          if [ $? -eq 0 ]; then
+              RESULT=$(osascript -e 'display dialog "是否同时删除用户数据？\n\n数据位置: ~/Library/Rime" buttons {"保留数据", "删除数据"} default button 1 with title "卸载完成" with icon note')
+              if [[ "$RESULT" == *"删除数据"* ]]; then
+                  rm -rf "${HOME}/Library/Rime"
+              fi
+              osascript -e 'display dialog "素言输入法已成功卸载！\n\n请注销或重启以完成清理。" buttons {"确定"} default button 1 with title "卸载完成" with icon note'
+          else
+              osascript -e 'display dialog "卸载失败，请重试。" buttons {"确定"} default button 1 with title "错误" with icon stop'
+          fi
+          SCRIPT
+          
+          chmod +x "${UNINSTALLER}/Contents/MacOS/uninstall"
+          echo "Uninstaller embedded into app bundle"
+      
       - name: Create PKG installer
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -190,94 +258,11 @@ jobs:
           echo "PKG created: ${OUTPUT_DIR}/SuYan-${VERSION}-macos.pkg"
           ls -lh "${OUTPUT_DIR}/"
       
-      - name: Build uninstaller
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          OUTPUT_DIR="output"
-          UNINSTALLER_APP="${OUTPUT_DIR}/SuYan卸载器.app"
-          
-          mkdir -p "${UNINSTALLER_APP}/Contents/MacOS"
-          mkdir -p "${UNINSTALLER_APP}/Contents/Resources"
-          
-          cat > "${UNINSTALLER_APP}/Contents/Info.plist" << 'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>uninstall</string>
-              <key>CFBundleIdentifier</key>
-              <string>cn.zhangjh.SuYanUninstaller</string>
-              <key>CFBundleName</key>
-              <string>SuYan卸载器</string>
-              <key>CFBundleDisplayName</key>
-              <string>素言输入法卸载器</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleVersion</key>
-              <string>1.0</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0</string>
-              <key>LSMinimumSystemVersion</key>
-              <string>13.0</string>
-              <key>NSHighResolutionCapable</key>
-              <true/>
-          </dict>
-          </plist>
-          PLIST
-          
-          cat > "${UNINSTALLER_APP}/Contents/MacOS/uninstall" << 'SCRIPT'
-          #!/bin/bash
-          
-          if [ ! -d "/Library/Input Methods/SuYan.app" ]; then
-              osascript -e 'display dialog "素言输入法未安装或已被卸载。" buttons {"确定"} default button 1 with title "卸载器" with icon caution'
-              exit 0
-          fi
-          
-          RESULT=$(osascript -e 'display dialog "确定要卸载素言输入法吗？\n\n卸载后需要注销或重启才能完全生效。" buttons {"取消", "卸载"} default button 1 with title "素言输入法卸载器" with icon caution')
-          
-          if [[ "$RESULT" != *"卸载"* ]]; then
-              exit 0
-          fi
-          
-          osascript << 'APPLESCRIPT'
-          do shell script "
-          pkill -x SuYan 2>/dev/null || true
-          sleep 1
-          pkill -9 -x SuYan 2>/dev/null || true
-          rm -rf '/Library/Input Methods/SuYan.app'
-          pkgutil --forget cn.zhangjh.inputmethod.SuYan 2>/dev/null || true
-          " with administrator privileges
-          APPLESCRIPT
-          
-          if [ $? -eq 0 ]; then
-              RESULT=$(osascript -e 'display dialog "是否同时删除用户数据（输入习惯、词频等）？\n\n数据位置: ~/Library/Rime" buttons {"保留数据", "删除数据"} default button 1 with title "卸载完成" with icon note')
-              
-              if [[ "$RESULT" == *"删除数据"* ]]; then
-                  rm -rf "${HOME}/Library/Rime"
-              fi
-              
-              osascript -e 'display dialog "素言输入法已成功卸载！\n\n请注销或重启以完成清理。" buttons {"确定"} default button 1 with title "卸载完成" with icon note'
-          else
-              osascript -e 'display dialog "卸载失败，请重试。" buttons {"确定"} default button 1 with title "错误" with icon stop'
-          fi
-          SCRIPT
-          
-          chmod +x "${UNINSTALLER_APP}/Contents/MacOS/uninstall"
-          
-          cd "${OUTPUT_DIR}"
-          zip -r "SuYan-Uninstaller-${VERSION}-macos.zip" "SuYan卸载器.app"
-          rm -rf "SuYan卸载器.app"
-          
-          echo "Uninstaller created"
-          ls -lh
-      
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: SuYan-${{ steps.version.outputs.version }}-macos
-          path: |
-            output/SuYan-*.pkg
+          path: output/SuYan-*.pkg
             output/SuYan-Uninstaller-*.zip
           retention-days: 7
 
@@ -594,14 +579,17 @@ jobs:
             
             ### 下载
             
-            | 平台 | 文件 | 说明 |
-            |------|------|------|
-            | macOS | `SuYan-${{ steps.version.outputs.version }}-macos.pkg` | 安装包 |
-            | macOS | `SuYan-Uninstaller-${{ steps.version.outputs.version }}-macos.zip` | 卸载器 |
-            | Windows | `SuYan-${{ steps.version.outputs.version }}-windows.exe` | 安装程序 |
+            | 平台 | 文件 |
+            |------|------|
+            | macOS | `SuYan-${{ steps.version.outputs.version }}-macos.pkg` |
+            | Windows | `SuYan-${{ steps.version.outputs.version }}-windows.exe` |
             
             ### 系统要求
             - macOS 13.0 (Ventura) 或更高版本
             - Windows 10 64位 或更高版本
+            
+            ### 卸载方法
+            - macOS: 运行 `/Library/Input Methods/SuYan.app/Contents/Resources/Uninstaller.app`
+            - Windows: 通过"设置 → 应用"或运行安装目录下的 `uninst.exe`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
