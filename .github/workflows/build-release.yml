@@ -334,32 +334,25 @@ jobs:
           Write-Host "yaml-cpp installed to $yamlDir"
       
       - name: Download SQLite3
-        shell: pwsh
+        shell: cmd
         run: |
-          $sqliteDir = "deps\sqlite3"
-          New-Item -ItemType Directory -Force -Path "$sqliteDir\include" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$sqliteDir\lib" | Out-Null
+          mkdir deps\sqlite3\include
+          mkdir deps\sqlite3\lib
           
-          # Download amalgamation (header)
-          Invoke-WebRequest -Uri "https://www.sqlite.org/2024/sqlite-amalgamation-3450000.zip" -OutFile "sqlite-src.zip"
-          Expand-Archive -Path "sqlite-src.zip" -DestinationPath "sqlite-src-temp"
-          Copy-Item "sqlite-src-temp\sqlite-amalgamation-3450000\sqlite3.h" "$sqliteDir\include\"
+          curl -L -o sqlite-src.zip https://www.sqlite.org/2024/sqlite-amalgamation-3450000.zip
+          tar -xf sqlite-src.zip
+          copy sqlite-amalgamation-3450000\sqlite3.h deps\sqlite3\include\
           
-          # Download precompiled DLL
-          Invoke-WebRequest -Uri "https://www.sqlite.org/2024/sqlite-dll-win-x64-3450000.zip" -OutFile "sqlite-dll.zip"
-          Expand-Archive -Path "sqlite-dll.zip" -DestinationPath "sqlite-dll-temp"
-          Copy-Item "sqlite-dll-temp\sqlite3.dll" "$sqliteDir\lib\"
-          Copy-Item "sqlite-dll-temp\sqlite3.def" "$sqliteDir\lib\"
+          curl -L -o sqlite-dll.zip https://www.sqlite.org/2024/sqlite-dll-win-x64-3450000.zip
+          tar -xf sqlite-dll.zip -C deps\sqlite3\lib
           
-          # Generate .lib from .def
-          Push-Location "$sqliteDir\lib"
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cd deps\sqlite3\lib
           lib /def:sqlite3.def /out:sqlite3.lib /machine:x64
-          Pop-Location
           
-          # Cleanup
-          Remove-Item -Recurse -Force sqlite-src.zip, sqlite-dll.zip, sqlite-src-temp, sqlite-dll-temp
-          
-          Write-Host "SQLite3 installed to $sqliteDir"
+          cd ..\..\..
+          rmdir /s /q sqlite-amalgamation-3450000
+          del sqlite-src.zip sqlite-dll.zip
       
       - name: Install NSIS
         shell: pwsh
