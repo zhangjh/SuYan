@@ -263,7 +263,6 @@ jobs:
         with:
           name: SuYan-${{ steps.version.outputs.version }}-macos
           path: output/SuYan-*.pkg
-            output/SuYan-Uninstaller-*.zip
           retention-days: 7
 
   build-windows:
