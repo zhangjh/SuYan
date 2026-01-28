@@ -306,15 +306,32 @@ jobs:
           arch: 'win64_msvc2019_64'
           cache: true
       
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: '01f602195983451bc83e72f4214af2cbc495aa94'
-      
-      - name: Install dependencies via vcpkg
+      - name: Download and build yaml-cpp
         shell: pwsh
         run: |
-          vcpkg install yaml-cpp:x64-windows
+          $version = "0.8.0"
+          $yamlDir = "${{ github.workspace }}\deps\yaml-cpp"
+          New-Item -ItemType Directory -Force -Path "$yamlDir" | Out-Null
+          
+          Invoke-WebRequest -Uri "https://github.com/jbeder/yaml-cpp/archive/refs/tags/$version.zip" -OutFile "yaml-cpp.zip"
+          Expand-Archive -Path "yaml-cpp.zip" -DestinationPath "yaml-cpp-temp"
+          
+          $buildDir = "yaml-cpp-temp\yaml-cpp-$version\build"
+          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+          
+          cmake -G "Visual Studio 17 2022" -A x64 `
+            -DYAML_CPP_BUILD_TESTS=OFF `
+            -DYAML_CPP_BUILD_TOOLS=OFF `
+            -DYAML_BUILD_SHARED_LIBS=ON `
+            -DCMAKE_INSTALL_PREFIX="$yamlDir" `
+            -S "yaml-cpp-temp\yaml-cpp-$version" -B $buildDir
+          
+          cmake --build $buildDir --config Release
+          cmake --install $buildDir --config Release
+          
+          Remove-Item -Recurse -Force yaml-cpp.zip, yaml-cpp-temp
+          
+          Write-Host "yaml-cpp installed to $yamlDir"
       
       - name: Download SQLite3
         shell: pwsh
@@ -433,13 +450,14 @@ jobs:
           $buildDir = "build-win"
           New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
           
-          $sqliteDir = "$PWD\deps\sqlite3"
+          $sqliteDir = "${{ github.workspace }}\deps\sqlite3"
+          $yamlDir = "${{ github.workspace }}\deps\yaml-cpp"
           
           cmake -G "Visual Studio 17 2022" -A x64 `
             -DQt6_DIR="$env:Qt6_DIR" `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DSQLite3_INCLUDE_DIR="$sqliteDir\include" `
             -DSQLite3_LIBRARY="$sqliteDir\lib\sqlite3.lib" `
+            -Dyaml-cpp_DIR="$yamlDir\lib\cmake\yaml-cpp" `
             -S . -B $buildDir
           
           cmake --build $buildDir --config Release
@@ -460,11 +478,11 @@ jobs:
           Copy-Item "build-win-x86\src\platform\windows\tsf_client\Release\SuYan32.dll" `
             "build-win\bin\Release\" -Force
       
-      - name: Copy vcpkg and SQLite DLLs
+      - name: Copy dependency DLLs
         shell: pwsh
         run: |
           $releaseDir = "build-win\bin\Release"
-          Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\bin\yaml-cpp.dll" $releaseDir -Force
+          Copy-Item "deps\yaml-cpp\bin\yaml-cpp.dll" $releaseDir -Force
           Copy-Item "deps\sqlite3\lib\sqlite3.dll" $releaseDir -Force
       
       - name: Deploy Qt dependencies
