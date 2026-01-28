@@ -314,7 +314,35 @@ jobs:
       - name: Install dependencies via vcpkg
         shell: pwsh
         run: |
-          vcpkg install yaml-cpp:x64-windows sqlite3:x64-windows
+          vcpkg install yaml-cpp:x64-windows
+      
+      - name: Download SQLite3
+        shell: pwsh
+        run: |
+          $sqliteDir = "deps\sqlite3"
+          New-Item -ItemType Directory -Force -Path "$sqliteDir\include" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$sqliteDir\lib" | Out-Null
+          
+          # Download amalgamation (header)
+          Invoke-WebRequest -Uri "https://www.sqlite.org/2024/sqlite-amalgamation-3450000.zip" -OutFile "sqlite-src.zip"
+          Expand-Archive -Path "sqlite-src.zip" -DestinationPath "sqlite-src-temp"
+          Copy-Item "sqlite-src-temp\sqlite-amalgamation-3450000\sqlite3.h" "$sqliteDir\include\"
+          
+          # Download precompiled DLL
+          Invoke-WebRequest -Uri "https://www.sqlite.org/2024/sqlite-dll-win-x64-3450000.zip" -OutFile "sqlite-dll.zip"
+          Expand-Archive -Path "sqlite-dll.zip" -DestinationPath "sqlite-dll-temp"
+          Copy-Item "sqlite-dll-temp\sqlite3.dll" "$sqliteDir\lib\"
+          Copy-Item "sqlite-dll-temp\sqlite3.def" "$sqliteDir\lib\"
+          
+          # Generate .lib from .def
+          Push-Location "$sqliteDir\lib"
+          lib /def:sqlite3.def /out:sqlite3.lib /machine:x64
+          Pop-Location
+          
+          # Cleanup
+          Remove-Item -Recurse -Force sqlite-src.zip, sqlite-dll.zip, sqlite-src-temp, sqlite-dll-temp
+          
+          Write-Host "SQLite3 installed to $sqliteDir"
       
       - name: Install NSIS
         shell: pwsh
@@ -405,9 +433,13 @@ jobs:
           $buildDir = "build-win"
           New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
           
+          $sqliteDir = "$PWD\deps\sqlite3"
+          
           cmake -G "Visual Studio 17 2022" -A x64 `
             -DQt6_DIR="$env:Qt6_DIR" `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DSQLite3_INCLUDE_DIR="$sqliteDir\include" `
+            -DSQLite3_LIBRARY="$sqliteDir\lib\sqlite3.lib" `
             -S . -B $buildDir
           
           cmake --build $buildDir --config Release
@@ -428,12 +460,12 @@ jobs:
           Copy-Item "build-win-x86\src\platform\windows\tsf_client\Release\SuYan32.dll" `
             "build-win\bin\Release\" -Force
       
-      - name: Copy vcpkg DLLs
+      - name: Copy vcpkg and SQLite DLLs
         shell: pwsh
         run: |
           $releaseDir = "build-win\bin\Release"
           Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\bin\yaml-cpp.dll" $releaseDir -Force
-          Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\bin\sqlite3.dll" $releaseDir -Force
+          Copy-Item "deps\sqlite3\lib\sqlite3.dll" $releaseDir -Force
       
       - name: Deploy Qt dependencies
         shell: pwsh
