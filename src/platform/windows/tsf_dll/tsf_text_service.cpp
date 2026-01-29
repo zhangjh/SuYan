@@ -1,5 +1,4 @@
 #include "tsf_text_service.h"
-#include "language_bar_button.h"
 #include <strsafe.h>
 #include <imm.h>
 
@@ -26,8 +25,7 @@ TSFTextService::TSFTextService()
     , m_threadMgr(nullptr)
     , m_clientId(TF_CLIENTID_NULL)
     , m_threadMgrEventSinkCookie(TF_INVALID_COOKIE)
-    , m_activated(false)
-    , m_pLangBarButton(nullptr) {
+    , m_activated(false) {
 }
 
 TSFTextService::~TSFTextService() {
@@ -96,13 +94,6 @@ STDMETHODIMP TSFTextService::ActivateEx(ITfThreadMgr* pThreadMgr, TfClientId tfC
         keystrokeMgr->Release();
     }
 
-    // Initialize Language Bar button
-    m_pLangBarButton = new LanguageBarButton();
-    if (!m_pLangBarButton->Initialize(m_threadMgr, m_clientId, g_hModule, CLSID_SuYanTextService)) {
-        m_pLangBarButton->Release();
-        m_pLangBarButton = nullptr;
-    }
-
     if (m_ipc.ensureServer()) {
         m_ipc.startSession();
         m_ipc.focusIn();
@@ -117,13 +108,6 @@ STDMETHODIMP TSFTextService::Deactivate() {
 
     m_ipc.focusOut();
     m_ipc.disconnect();
-
-    // Uninitialize Language Bar button
-    if (m_pLangBarButton) {
-        m_pLangBarButton->Uninitialize();
-        m_pLangBarButton->Release();
-        m_pLangBarButton = nullptr;
-    }
 
     releaseSinks();
 

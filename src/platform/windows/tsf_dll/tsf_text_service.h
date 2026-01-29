@@ -4,7 +4,6 @@
 #include <msctf.h>
 #include <olectl.h>
 #include "ipc_client.h"
-#include "language_bar_button.h"
 
 namespace suyan {
 
@@ -59,7 +58,6 @@ private:
     DWORD m_threadMgrEventSinkCookie;
     IPCClient m_ipc;
     bool m_activated;
-    LanguageBarButton* m_pLangBarButton;
 };
 
 class TSFTextServiceFactory : public IClassFactory {

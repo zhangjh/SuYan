@@ -23,13 +23,11 @@ set(TSF_DLL_SOURCES
     dll_main.cpp
     tsf_text_service.cpp
     ipc_client.cpp
-    language_bar_button.cpp
 )
 
 set(TSF_DLL_HEADERS
     tsf_text_service.h
     ipc_client.h
-    language_bar_button.h
     ${CMAKE_SOURCE_DIR}/src/shared/ipc_protocol.h
 )
 
