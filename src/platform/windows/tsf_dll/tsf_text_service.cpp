@@ -1,42 +1,57 @@
 #include "tsf_text_service.h"
-#include <strsafe.h>
-#include <imm.h>
-
-#pragma comment(lib, "imm32.lib")
+#include "edit_session.h"
+#include "logger.h"
+#include "../../../shared/ipc_protocol.h"
+#include <ctffunc.h>
+#include <vector>
 
 namespace suyan {
 
 const CLSID CLSID_SuYanTextService = {
-    0xA1B2C3D4, 0xE5F6, 0x7890,
-    {0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x90}
+    0xa1b2c3d4, 0xe5f6, 0x7890, {0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90}
 };
 
 const GUID GUID_SuYanProfile = {
-    0xB2C3D4E5, 0xF6A7, 0x8901,
-    {0xBC, 0xDE, 0xF1, 0x23, 0x45, 0x67, 0x89, 0x01}
+    0xb2c3d4e5, 0xf6a7, 0x8901, {0xbc, 0xde, 0xf1, 0x23, 0x45, 0x67, 0x89, 0x01}
 };
 
-TSFTextServiceFactory g_factory;
-LONG g_serverLocks = 0;
-HMODULE g_hModule = nullptr;
+std::atomic<LONG> g_dllRefCount(0);
+TSFTextServiceFactory g_classFactory;
+TSFTextService* TSFTextService::s_instance = nullptr;
+
+void DllAddRef() { g_dllRefCount++; }
+void DllRelease() { g_dllRefCount--; }
 
 TSFTextService::TSFTextService()
     : m_refCount(1)
     , m_threadMgr(nullptr)
     , m_clientId(TF_CLIENTID_NULL)
     , m_threadMgrEventSinkCookie(TF_INVALID_COOKIE)
-    , m_activated(false) {
+    , m_keystrokeMgr(nullptr)
+    , m_activated(false)
+    , m_langBarButton(nullptr)
+    , m_langBarItemMgr(nullptr)
+    , m_composition(nullptr)
+    , m_editSessionContext(nullptr)
+    , m_composingOnServer(false)
+    , m_testKeyDownPending(false) {
+    DllAddRef();
+    s_instance = this;
 }
 
 TSFTextService::~TSFTextService() {
-    if (m_activated) {
-        Deactivate();
+    if (m_composition) {
+        m_composition->Release();
+        m_composition = nullptr;
     }
+    if (s_instance == this) {
+        s_instance = nullptr;
+    }
+    DllRelease();
 }
 
 STDMETHODIMP TSFTextService::QueryInterface(REFIID riid, void** ppvObj) {
     if (!ppvObj) return E_INVALIDARG;
-
     *ppvObj = nullptr;
 
     if (IsEqualIID(riid, IID_IUnknown) ||
@@ -47,6 +62,10 @@ STDMETHODIMP TSFTextService::QueryInterface(REFIID riid, void** ppvObj) {
         *ppvObj = static_cast<ITfThreadMgrEventSink*>(this);
     } else if (IsEqualIID(riid, IID_ITfKeyEventSink)) {
         *ppvObj = static_cast<ITfKeyEventSink*>(this);
+    } else if (IsEqualIID(riid, IID_ITfCompositionSink)) {
+        *ppvObj = static_cast<ITfCompositionSink*>(this);
+    } else if (IsEqualIID(riid, IID_ITfEditSession)) {
+        *ppvObj = static_cast<ITfEditSession*>(this);
     } else {
         return E_NOINTERFACE;
     }
@@ -61,9 +80,7 @@ STDMETHODIMP_(ULONG) TSFTextService::AddRef() {
 
 STDMETHODIMP_(ULONG) TSFTextService::Release() {
     LONG count = InterlockedDecrement(&m_refCount);
-    if (count == 0) {
-        delete this;
-    }
+    if (count == 0) delete this;
     return count;
 }
 
@@ -71,34 +88,29 @@ STDMETHODIMP TSFTextService::Activate(ITfThreadMgr* pThreadMgr, TfClientId tfCli
     return ActivateEx(pThreadMgr, tfClientId, 0);
 }
 
-STDMETHODIMP TSFTextService::ActivateEx(ITfThreadMgr* pThreadMgr, TfClientId tfClientId, DWORD) {
-    if (m_activated) {
-        return S_OK;
-    }
+STDMETHODIMP TSFTextService::ActivateEx(ITfThreadMgr* pThreadMgr, TfClientId tfClientId, DWORD dwFlags) {
+    (void)dwFlags;
+    if (m_activated) return S_OK;
 
     m_threadMgr = pThreadMgr;
     m_threadMgr->AddRef();
     m_clientId = tfClientId;
 
-    ITfSource* source = nullptr;
-    if (SUCCEEDED(m_threadMgr->QueryInterface(IID_ITfSource, reinterpret_cast<void**>(&source)))) {
-        source->AdviseSink(IID_ITfThreadMgrEventSink,
-                          static_cast<ITfThreadMgrEventSink*>(this),
-                          &m_threadMgrEventSinkCookie);
-        source->Release();
+    if (!m_ipc.connect()) {
+        log::error("TSFTextService: Failed to connect to IPC server");
     }
 
-    ITfKeystrokeMgr* keystrokeMgr = nullptr;
-    if (SUCCEEDED(m_threadMgr->QueryInterface(IID_ITfKeystrokeMgr, reinterpret_cast<void**>(&keystrokeMgr)))) {
-        keystrokeMgr->AdviseKeyEventSink(m_clientId, static_cast<ITfKeyEventSink*>(this), TRUE);
-        keystrokeMgr->Release();
+    if (!initThreadMgrEventSink()) {
+        Deactivate();
+        return E_FAIL;
     }
 
-    if (m_ipc.ensureServer()) {
-        m_ipc.startSession();
-        m_ipc.focusIn();
+    if (!initKeyEventSink()) {
+        Deactivate();
+        return E_FAIL;
     }
 
+    initLangBarButton();
     m_activated = true;
     return S_OK;
 }
@@ -106,10 +118,11 @@ STDMETHODIMP TSFTextService::ActivateEx(ITfThreadMgr* pThreadMgr, TfClientId tfC
 STDMETHODIMP TSFTextService::Deactivate() {
     if (!m_activated) return S_OK;
 
-    m_ipc.focusOut();
+    abortComposition();
+    uninitLangBarButton();
+    uninitKeyEventSink();
+    uninitThreadMgrEventSink();
     m_ipc.disconnect();
-
-    releaseSinks();
 
     if (m_threadMgr) {
         m_threadMgr->Release();
@@ -121,179 +134,441 @@ STDMETHODIMP TSFTextService::Deactivate() {
     return S_OK;
 }
 
-void TSFTextService::releaseSinks() {
-    if (!m_threadMgr) return;
+bool TSFTextService::initThreadMgrEventSink() {
+    ITfSource* source = nullptr;
+    HRESULT hr = m_threadMgr->QueryInterface(IID_ITfSource, reinterpret_cast<void**>(&source));
+    if (FAILED(hr)) return false;
 
-    ITfKeystrokeMgr* keystrokeMgr = nullptr;
-    if (SUCCEEDED(m_threadMgr->QueryInterface(IID_ITfKeystrokeMgr, reinterpret_cast<void**>(&keystrokeMgr)))) {
-        keystrokeMgr->UnadviseKeyEventSink(m_clientId);
-        keystrokeMgr->Release();
+    hr = source->AdviseSink(IID_ITfThreadMgrEventSink,
+                            static_cast<ITfThreadMgrEventSink*>(this),
+                            &m_threadMgrEventSinkCookie);
+    source->Release();
+    return SUCCEEDED(hr);
+}
+
+void TSFTextService::uninitThreadMgrEventSink() {
+    if (m_threadMgrEventSinkCookie == TF_INVALID_COOKIE) return;
+
+    ITfSource* source = nullptr;
+    if (SUCCEEDED(m_threadMgr->QueryInterface(IID_ITfSource, reinterpret_cast<void**>(&source)))) {
+        source->UnadviseSink(m_threadMgrEventSinkCookie);
+        source->Release();
     }
+    m_threadMgrEventSinkCookie = TF_INVALID_COOKIE;
+}
 
-    if (m_threadMgrEventSinkCookie != TF_INVALID_COOKIE) {
-        ITfSource* source = nullptr;
-        if (SUCCEEDED(m_threadMgr->QueryInterface(IID_ITfSource, reinterpret_cast<void**>(&source)))) {
-            source->UnadviseSink(m_threadMgrEventSinkCookie);
-            source->Release();
-        }
-        m_threadMgrEventSinkCookie = TF_INVALID_COOKIE;
+bool TSFTextService::initKeyEventSink() {
+    HRESULT hr = m_threadMgr->QueryInterface(IID_ITfKeystrokeMgr,
+                                              reinterpret_cast<void**>(&m_keystrokeMgr));
+    if (FAILED(hr)) return false;
+
+    hr = m_keystrokeMgr->AdviseKeyEventSink(m_clientId,
+                                             static_cast<ITfKeyEventSink*>(this),
+                                             TRUE);
+    if (FAILED(hr)) {
+        m_keystrokeMgr->Release();
+        m_keystrokeMgr = nullptr;
+        return false;
     }
+    return true;
 }
 
-// ITfThreadMgrEventSink
-STDMETHODIMP TSFTextService::OnInitDocumentMgr(ITfDocumentMgr*) { return S_OK; }
-STDMETHODIMP TSFTextService::OnUninitDocumentMgr(ITfDocumentMgr*) { return S_OK; }
-STDMETHODIMP TSFTextService::OnPushContext(ITfContext*) { return S_OK; }
-STDMETHODIMP TSFTextService::OnPopContext(ITfContext*) { return S_OK; }
-
-STDMETHODIMP TSFTextService::OnSetFocus(ITfDocumentMgr*, ITfDocumentMgr*) {
-    return S_OK;
+void TSFTextService::uninitKeyEventSink() {
+    if (!m_keystrokeMgr) return;
+    m_keystrokeMgr->UnadviseKeyEventSink(m_clientId);
+    m_keystrokeMgr->Release();
+    m_keystrokeMgr = nullptr;
 }
 
-// ITfKeyEventSink
-STDMETHODIMP TSFTextService::OnSetFocus(BOOL) {
-    return S_OK;
-}
+bool TSFTextService::initLangBarButton() {
+    HRESULT hr = m_threadMgr->QueryInterface(IID_ITfLangBarItemMgr,
+                                              reinterpret_cast<void**>(&m_langBarItemMgr));
+    if (FAILED(hr)) return false;
 
-STDMETHODIMP TSFTextService::OnTestKeyDown(ITfContext*, WPARAM wParam, LPARAM, BOOL* pfEaten) {
-    *pfEaten = m_ipc.testKey(static_cast<uint32_t>(wParam), getModifiers()) ? TRUE : FALSE;
-    return S_OK;
-}
+    m_langBarButton = new LangBarButton();
+    m_langBarButton->setMenuCallback(onMenuCallback);
 
-STDMETHODIMP TSFTextService::OnTestKeyUp(ITfContext*, WPARAM, LPARAM, BOOL* pfEaten) {
-    *pfEaten = FALSE;
-    return S_OK;
-}
-
-STDMETHODIMP TSFTextService::OnKeyDown(ITfContext*, WPARAM wParam, LPARAM, BOOL* pfEaten) {
-    *pfEaten = FALSE;
-
-    // Update cursor position BEFORE processing key to ensure candidate window
-    // appears at the correct position
-    updateCursorPosition();
-
-    if (m_ipc.processKey(static_cast<uint32_t>(wParam), getModifiers())) {
-        *pfEaten = TRUE;
-
-        std::wstring text;
-        if (m_ipc.getCommitText(text) && !text.empty()) {
-            commitText(text);
-        }
+    hr = m_langBarItemMgr->AddItem(m_langBarButton);
+    if (FAILED(hr)) {
+        m_langBarButton->Release();
+        m_langBarButton = nullptr;
+        m_langBarItemMgr->Release();
+        m_langBarItemMgr = nullptr;
+        return false;
     }
-
-    return S_OK;
+    return true;
 }
 
-STDMETHODIMP TSFTextService::OnKeyUp(ITfContext*, WPARAM, LPARAM, BOOL* pfEaten) {
-    *pfEaten = FALSE;
-    return S_OK;
-}
-
-STDMETHODIMP TSFTextService::OnPreservedKey(ITfContext*, REFGUID, BOOL* pfEaten) {
-    *pfEaten = FALSE;
-    return S_OK;
-}
-
-uint32_t TSFTextService::getModifiers() {
-    uint32_t mod = SUYAN_MOD_NONE;
-    if (GetKeyState(VK_SHIFT) & 0x8000)   mod |= SUYAN_MOD_SHIFT;
-    if (GetKeyState(VK_CONTROL) & 0x8000) mod |= SUYAN_MOD_CONTROL;
-    if (GetKeyState(VK_MENU) & 0x8000)    mod |= SUYAN_MOD_ALT;
-    return mod;
-}
-
-void TSFTextService::commitText(const std::wstring& text) {
-    for (wchar_t ch : text) {
-        INPUT input[2] = {};
-        input[0].type = INPUT_KEYBOARD;
-        input[0].ki.wScan = ch;
-        input[0].ki.dwFlags = KEYEVENTF_UNICODE;
-
-        input[1].type = INPUT_KEYBOARD;
-        input[1].ki.wScan = ch;
-        input[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-
-        SendInput(2, input, sizeof(INPUT));
+void TSFTextService::uninitLangBarButton() {
+    if (m_langBarItemMgr && m_langBarButton) {
+        m_langBarItemMgr->RemoveItem(m_langBarButton);
+    }
+    if (m_langBarButton) {
+        m_langBarButton->Release();
+        m_langBarButton = nullptr;
+    }
+    if (m_langBarItemMgr) {
+        m_langBarItemMgr->Release();
+        m_langBarItemMgr = nullptr;
     }
 }
 
-void TSFTextService::updateCursorPosition() {
-    HWND hwnd = GetFocus();
-    if (!hwnd) {
-        hwnd = GetForegroundWindow();
-    }
-    if (!hwnd) return;
-
-    GUITHREADINFO gti = { sizeof(GUITHREADINFO) };
-    DWORD threadId = GetWindowThreadProcessId(hwnd, nullptr);
-    if (GetGUIThreadInfo(threadId, &gti)) {
-        if (gti.hwndCaret && !IsRectEmpty(&gti.rcCaret)) {
-            POINT pt = { gti.rcCaret.left, gti.rcCaret.top };
-            ClientToScreen(gti.hwndCaret, &pt);
-            int height = gti.rcCaret.bottom - gti.rcCaret.top;
-            if (height <= 0) height = 20;
-            m_ipc.updatePosition(pt.x, pt.y + height, height);
-            return;
-        }
-        if (gti.hwndFocus) {
-            hwnd = gti.hwndFocus;
+void TSFTextService::onMenuCallback(UINT menuId) {
+    if (!s_instance) return;
+    if (menuId == MenuToggleMode && s_instance->m_ipc.isConnected()) {
+        s_instance->m_ipc.toggleMode();
+        bool isChineseMode = s_instance->m_ipc.queryMode();
+        if (s_instance->m_langBarButton) {
+            s_instance->m_langBarButton->updateIcon(isChineseMode);
         }
     }
+}
 
-    POINT caretPos = {};
-    if (GetCaretPos(&caretPos)) {
-        ClientToScreen(hwnd, &caretPos);
-        m_ipc.updatePosition(caretPos.x, caretPos.y + 20, 20);
+STDMETHODIMP TSFTextService::OnInitDocumentMgr(ITfDocumentMgr* pDocMgr) {
+    (void)pDocMgr;
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnUninitDocumentMgr(ITfDocumentMgr* pDocMgr) {
+    (void)pDocMgr;
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnSetFocus(ITfDocumentMgr* pDocMgrFocus, ITfDocumentMgr* pDocMgrPrevFocus) {
+    (void)pDocMgrPrevFocus;
+    if (pDocMgrFocus) {
+        m_ipc.focusIn();
+    } else {
+        m_ipc.focusOut();
+        abortComposition();
+    }
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnPushContext(ITfContext* pContext) {
+    (void)pContext;
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnPopContext(ITfContext* pContext) {
+    (void)pContext;
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnSetFocus(BOOL fForeground) {
+    if (fForeground) {
+        m_ipc.focusIn();
+    } else {
+        m_ipc.focusOut();
+        abortComposition();
+    }
+    return S_OK;
+}
+
+void TSFTextService::processKeyEvent(WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    (void)lParam;
+    
+    if (!m_ipc.isConnected()) {
+        *pfEaten = FALSE;
         return;
     }
 
-    HIMC hIMC = ImmGetContext(hwnd);
-    if (hIMC) {
-        COMPOSITIONFORM cf = {};
-        if (ImmGetCompositionWindow(hIMC, &cf)) {
-            POINT pt = cf.ptCurrentPos;
-            ClientToScreen(hwnd, &pt);
-            ImmReleaseContext(hwnd, hIMC);
-            m_ipc.updatePosition(pt.x, pt.y + 20, 20);
-            return;
+    uint32_t vk = static_cast<uint32_t>(wParam);
+    uint32_t mod = ipc::ModNone;
+    if (GetKeyState(VK_SHIFT) & 0x8000) mod |= ipc::ModShift;
+    if (GetKeyState(VK_CONTROL) & 0x8000) mod |= ipc::ModControl;
+    if (GetKeyState(VK_MENU) & 0x8000) mod |= ipc::ModAlt;
+
+    std::wstring commitText;
+    bool processed = m_ipc.processKey(vk, mod, commitText);
+    
+    m_commitText = commitText;
+    m_composingOnServer = processed && commitText.empty();
+    *pfEaten = processed ? TRUE : FALSE;
+}
+
+STDMETHODIMP TSFTextService::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    if (m_testKeyDownPending) {
+        *pfEaten = TRUE;
+        return S_OK;
+    }
+    processKeyEvent(wParam, lParam, pfEaten);
+    updateComposition(pContext);
+    if (*pfEaten) m_testKeyDownPending = true;
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    if (m_testKeyDownPending) {
+        m_testKeyDownPending = false;
+        *pfEaten = TRUE;
+    } else {
+        processKeyEvent(wParam, lParam, pfEaten);
+        updateComposition(pContext);
+    }
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnTestKeyUp(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    (void)pContext;
+    (void)wParam;
+    (void)lParam;
+    m_testKeyDownPending = false;
+    *pfEaten = FALSE;
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnKeyUp(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    (void)pContext;
+    (void)wParam;
+    (void)lParam;
+    m_testKeyDownPending = false;
+    *pfEaten = FALSE;
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnPreservedKey(ITfContext* pContext, REFGUID rguid, BOOL* pfEaten) {
+    (void)pContext;
+    (void)rguid;
+    *pfEaten = FALSE;
+    return S_OK;
+}
+
+STDMETHODIMP TSFTextService::OnCompositionTerminated(TfEditCookie ecWrite, ITfComposition* pComposition) {
+    (void)ecWrite;
+    (void)pComposition;
+    if (m_composition) {
+        m_composition->Release();
+        m_composition = nullptr;
+    }
+    return S_OK;
+}
+
+void TSFTextService::updateComposition(ITfContext* pContext) {
+    if (!pContext) return;
+    
+    m_editSessionContext = pContext;
+    
+    HRESULT hr;
+    pContext->RequestEditSession(m_clientId, 
+                                 static_cast<ITfEditSession*>(this),
+                                 TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, &hr);
+    
+    requestUpdateCompositionWindow(pContext);
+}
+
+STDMETHODIMP TSFTextService::DoEditSession(TfEditCookie ec) {
+    if (!m_editSessionContext) return E_FAIL;
+
+    if (!m_commitText.empty()) {
+        if (!isComposing()) {
+            startComposition(m_editSessionContext, ec);
         }
-        ImmReleaseContext(hwnd, hIMC);
+        
+        if (isComposing()) {
+            ITfRange* pRange = nullptr;
+            if (SUCCEEDED(m_composition->GetRange(&pRange)) && pRange) {
+                pRange->SetText(ec, 0, m_commitText.c_str(), static_cast<LONG>(m_commitText.length()));
+                pRange->Collapse(ec, TF_ANCHOR_END);
+                
+                TF_SELECTION sel;
+                sel.range = pRange;
+                sel.style.ase = TF_AE_NONE;
+                sel.style.fInterimChar = FALSE;
+                m_editSessionContext->SetSelection(ec, 1, &sel);
+                
+                pRange->Release();
+            }
+            endComposition(m_editSessionContext, ec, false);
+        }
+        m_commitText.clear();
+    }
+
+    if (m_composingOnServer && !isComposing()) {
+        startComposition(m_editSessionContext, ec);
+    } else if (!m_composingOnServer && isComposing()) {
+        endComposition(m_editSessionContext, ec, true);
+    }
+
+    return S_OK;
+}
+
+
+void TSFTextService::startComposition(ITfContext* pContext, TfEditCookie ec) {
+    ITfInsertAtSelection* pInsertAtSelection = nullptr;
+    if (FAILED(pContext->QueryInterface(IID_ITfInsertAtSelection, 
+                                        reinterpret_cast<void**>(&pInsertAtSelection)))) {
+        return;
+    }
+
+    ITfRange* pRange = nullptr;
+    if (FAILED(pInsertAtSelection->InsertTextAtSelection(ec, TF_IAS_QUERYONLY, nullptr, 0, &pRange))) {
+        pInsertAtSelection->Release();
+        return;
+    }
+
+    ITfContextComposition* pContextComposition = nullptr;
+    if (FAILED(pContext->QueryInterface(IID_ITfContextComposition,
+                                        reinterpret_cast<void**>(&pContextComposition)))) {
+        pRange->Release();
+        pInsertAtSelection->Release();
+        return;
+    }
+
+    ITfComposition* pComposition = nullptr;
+    HRESULT hr = pContextComposition->StartComposition(ec, pRange, 
+                                                       static_cast<ITfCompositionSink*>(this),
+                                                       &pComposition);
+    if (SUCCEEDED(hr) && pComposition) {
+        m_composition = pComposition;
+        pRange->SetText(ec, TF_ST_CORRECTION, L" ", 1);
+        pRange->Collapse(ec, TF_ANCHOR_START);
+        
+        TF_SELECTION sel;
+        sel.range = pRange;
+        sel.style.ase = TF_AE_NONE;
+        sel.style.fInterimChar = FALSE;
+        pContext->SetSelection(ec, 1, &sel);
+    }
+
+    pContextComposition->Release();
+    pRange->Release();
+    pInsertAtSelection->Release();
+}
+
+void TSFTextService::endComposition(ITfContext* pContext, TfEditCookie ec, bool clear) {
+    (void)pContext;
+    
+    if (!m_composition) return;
+
+    if (clear) {
+        ITfRange* pRange = nullptr;
+        if (SUCCEEDED(m_composition->GetRange(&pRange)) && pRange) {
+            pRange->SetText(ec, 0, L"", 0);
+            pRange->Release();
+        }
+    }
+
+    m_composition->EndComposition(ec);
+    m_composition->Release();
+    m_composition = nullptr;
+}
+
+void TSFTextService::updateCompositionWindow(ITfContext* pContext, TfEditCookie ec) {
+    if (!pContext) return;
+
+    ITfContextView* pContextView = nullptr;
+    if (FAILED(pContext->GetActiveView(&pContextView)) || !pContextView) return;
+
+    RECT rc = {};
+    BOOL fClipped = FALSE;
+    bool gotPosition = false;
+
+    if (m_composition) {
+        ITfRange* pRange = nullptr;
+        if (SUCCEEDED(m_composition->GetRange(&pRange)) && pRange) {
+            pRange->Collapse(ec, TF_ANCHOR_START);
+            if (SUCCEEDED(pContextView->GetTextExt(ec, pRange, &rc, &fClipped))) {
+                if (rc.left != 0 || rc.top != 0) {
+                    gotPosition = true;
+                }
+            }
+            pRange->Release();
+        }
+    }
+
+    if (!gotPosition) {
+        TF_SELECTION selection;
+        ULONG fetched = 0;
+        if (SUCCEEDED(pContext->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) && fetched > 0) {
+            if (SUCCEEDED(pContextView->GetTextExt(ec, selection.range, &rc, &fClipped))) {
+                if (rc.left != 0 || rc.top != 0) {
+                    gotPosition = true;
+                }
+            }
+            selection.range->Release();
+        }
+    }
+
+    pContextView->Release();
+
+    if (gotPosition) {
+        setCompositionPosition(rc);
     }
 }
 
-// TSFTextServiceFactory
+void TSFTextService::requestUpdateCompositionWindow(ITfContext* pContext) {
+    if (!pContext) return;
+
+    ITfContextView* pContextView = nullptr;
+    if (FAILED(pContext->GetActiveView(&pContextView)) || !pContextView) return;
+
+    GetTextExtentEditSession* pEditSession = new GetTextExtentEditSession(this, pContext, pContextView);
+    pContextView->Release();
+
+    if (pEditSession) {
+        HRESULT hr;
+        pContext->RequestEditSession(m_clientId, pEditSession, TF_ES_ASYNCDONTCARE | TF_ES_READ, &hr);
+        pEditSession->Release();
+    }
+}
+
+void TSFTextService::setCompositionPosition(const RECT& rc) {
+    int16_t x = static_cast<int16_t>(rc.left);
+    int16_t y = static_cast<int16_t>(rc.top);
+    int16_t w = static_cast<int16_t>(rc.right - rc.left);
+    int16_t h = static_cast<int16_t>(rc.bottom - rc.top);
+    m_ipc.updateCursor(x, y, w, h > 0 ? h : 20);
+}
+
+void TSFTextService::abortComposition() {
+    if (m_composition) {
+        m_composition->Release();
+        m_composition = nullptr;
+    }
+    m_composingOnServer = false;
+    m_commitText.clear();
+}
+
 STDMETHODIMP TSFTextServiceFactory::QueryInterface(REFIID riid, void** ppvObj) {
     if (!ppvObj) return E_INVALIDARG;
+    *ppvObj = nullptr;
 
     if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_IClassFactory)) {
         *ppvObj = static_cast<IClassFactory*>(this);
         AddRef();
         return S_OK;
     }
-
-    *ppvObj = nullptr;
     return E_NOINTERFACE;
 }
 
-STDMETHODIMP_(ULONG) TSFTextServiceFactory::AddRef() { return 1; }
-STDMETHODIMP_(ULONG) TSFTextServiceFactory::Release() { return 1; }
+STDMETHODIMP_(ULONG) TSFTextServiceFactory::AddRef() {
+    DllAddRef();
+    return 2;
+}
+
+STDMETHODIMP_(ULONG) TSFTextServiceFactory::Release() {
+    DllRelease();
+    return 1;
+}
 
 STDMETHODIMP TSFTextServiceFactory::CreateInstance(IUnknown* pUnkOuter, REFIID riid, void** ppvObj) {
+    if (!ppvObj) return E_INVALIDARG;
+    *ppvObj = nullptr;
     if (pUnkOuter) return CLASS_E_NOAGGREGATION;
 
     TSFTextService* service = new TSFTextService();
+    if (!service) return E_OUTOFMEMORY;
+
     HRESULT hr = service->QueryInterface(riid, ppvObj);
     service->Release();
     return hr;
 }
 
 STDMETHODIMP TSFTextServiceFactory::LockServer(BOOL fLock) {
-    if (fLock) {
-        InterlockedIncrement(&g_serverLocks);
-    } else {
-        InterlockedDecrement(&g_serverLocks);
-    }
+    if (fLock) DllAddRef();
+    else DllRelease();
     return S_OK;
 }
 
-} // namespace suyan
+}  // namespace suyan

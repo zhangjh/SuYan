@@ -17,6 +17,8 @@
 !define PRODUCT_WEB_SITE "https://github.com/zhangjh"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_ROOT_KEY "HKLM"
+; Registry key for TSF DLL to find Server path (Requirements 10.2)
+!define PRODUCT_REG_KEY "Software\${PRODUCT_NAME}"
 
 ; ============================================
 ; Installer Attributes
@@ -88,6 +90,9 @@ LangString CleanUserData ${LANG_ENGLISH} "Do you also want to delete user data (
 Section "MainSection" SEC01
     SetOutPath "$INSTDIR"
     SetOverwrite on
+    
+    ; Force 64-bit registry view for uninstall info
+    SetRegView 64
 
     ; ========================================
     ; TSF DLLs - Install to System Directories
@@ -99,7 +104,7 @@ Section "MainSection" SEC01
     ; 32-bit TSF DLL -> SysWOW64 (for 32-bit applications on 64-bit Windows)
     ${If} ${RunningX64}
         SetOutPath "$WINDIR\SysWOW64"
-        File /nonfatal "..\build-win\bin\Release\SuYan32.dll"
+        File "..\build-win\bin\Release\SuYan32.dll"
     ${EndIf}
     
     ; ========================================
@@ -209,10 +214,9 @@ Section "MainSection" SEC01
     ; Register the 64-bit DLL from System32
     ExecWait 'regsvr32.exe /s "$SYSDIR\SuYan.dll"'
     
-    ; Register the 32-bit DLL from SysWOW64 (if exists)
+    ; Register the 32-bit DLL from SysWOW64
     ${If} ${RunningX64}
-        IfFileExists "$WINDIR\SysWOW64\SuYan32.dll" 0 +2
-            ExecWait '$WINDIR\SysWOW64\regsvr32.exe /s "$WINDIR\SysWOW64\SuYan32.dll"'
+        ExecWait '$WINDIR\SysWOW64\regsvr32.exe /s "$WINDIR\SysWOW64\SuYan32.dll"'
     ${EndIf}
     
     ; Store DLL paths in registry for uninstaller
@@ -240,6 +244,23 @@ Section "MainSection" SEC01
     WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "Publisher" "${PRODUCT_PUBLISHER}"
     WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "InstallLocation" "$INSTDIR"
     
+    ; ========================================
+    ; Write Install Path for TSF DLL (Requirements 10.2)
+    ; TSF DLL reads this to locate SuYanServer.exe
+    ; ========================================
+    WriteRegStr HKLM "${PRODUCT_REG_KEY}" "InstallPath" "$INSTDIR"
+    WriteRegStr HKLM "${PRODUCT_REG_KEY}" "Version" "${PRODUCT_VERSION}"
+    
+    ; ========================================
+    ; Add to Startup (Run at login)
+    ; ========================================
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "${PRODUCT_NAME}Server" '"$INSTDIR\SuYanServer.exe"'
+    
+    ; ========================================
+    ; Start Server Now
+    ; ========================================
+    Exec '"$INSTDIR\SuYanServer.exe"'
+    
     ; Calculate installed size
     ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
     IntFmt $0 "0x%08X" $0
@@ -253,18 +274,30 @@ SectionEnd
 Section "Uninstall"
     SetShellVarContext all
     
-    ; ========================================
-    ; Stop SuYanServer if running
-    ; ========================================
-    ExecWait 'taskkill /F /IM SuYanServer.exe' $0
+    ; Force 64-bit registry view
+    SetRegView 64
     
     ; ========================================
-    ; Unregister TSF DLLs
+    ; Stop SuYanServer if running (Requirements 10.3)
     ; ========================================
-    ; Unregister 32-bit DLL from SysWOW64 first (if exists)
+    ; Kill all instances of SuYanServer
+    ExecWait 'taskkill /F /IM SuYanServer.exe' $0
+    ; Wait for process to fully terminate and release file handles
+    Sleep 500
+    
+    ; ========================================
+    ; Remove from Startup
+    ; ========================================
+    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "${PRODUCT_NAME}Server"
+    
+    ; ========================================
+    ; Unregister TSF DLLs (Requirements 10.3)
+    ; Note: Unregistering will fail silently if DLL is in use by applications
+    ; Users may need to restart or close applications using the input method
+    ; ========================================
+    ; Unregister 32-bit DLL from SysWOW64
     ${If} ${RunningX64}
-        IfFileExists "$WINDIR\SysWOW64\SuYan32.dll" 0 +2
-            ExecWait '$WINDIR\SysWOW64\regsvr32.exe /u /s "$WINDIR\SysWOW64\SuYan32.dll"'
+        ExecWait '$WINDIR\SysWOW64\regsvr32.exe /u /s "$WINDIR\SysWOW64\SuYan32.dll"'
     ${EndIf}
     
     ; Unregister 64-bit DLL from System32
@@ -320,9 +353,11 @@ Section "Uninstall"
     RMDir "$INSTDIR"
     
     ; ========================================
-    ; Remove Registry Keys
+    ; Remove Registry Keys (Requirements 10.4)
     ; ========================================
     DeleteRegKey ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}"
+    ; Remove TSF DLL registry key
+    DeleteRegKey HKLM "${PRODUCT_REG_KEY}"
     
     ; ========================================
     ; Optional: Clean User Data
@@ -331,7 +366,10 @@ Section "Uninstall"
     ; ========================================
     IfSilent skip_userdata_prompt
         MessageBox MB_YESNO|MB_ICONQUESTION "$(CleanUserData)" IDNO skip_userdata
+            ; Remove user data (dictionaries, settings)
             RMDir /r "$APPDATA\${PRODUCT_NAME}"
+            ; Remove log files
+            RMDir /r "$LOCALAPPDATA\${PRODUCT_NAME}"
             Goto skip_userdata
     skip_userdata_prompt:
         ; Check for /CLEANDATA parameter in silent mode
@@ -339,6 +377,7 @@ Section "Uninstall"
         ${GetOptions} $R0 "/CLEANDATA" $R1
         IfErrors skip_userdata
             RMDir /r "$APPDATA\${PRODUCT_NAME}"
+            RMDir /r "$LOCALAPPDATA\${PRODUCT_NAME}"
     skip_userdata:
 SectionEnd
 

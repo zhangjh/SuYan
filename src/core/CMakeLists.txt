@@ -20,12 +20,13 @@ set(CORE_HEADERS
     input_engine.h
     config_manager.h
     frequency_manager.h
+    logger.h
 )
 
-# Windows IPC
+# Windows 平台特定源文件
 if(WIN32)
-    list(APPEND CORE_SOURCES ipc_channel.cpp)
-    list(APPEND CORE_HEADERS ipc_channel.h)
+    list(APPEND CORE_SOURCES ipc_server.cpp ../server/logger.cpp)
+    list(APPEND CORE_HEADERS ipc_server.h ../server/logger.h)
 endif()
 
 # 创建核心层静态库

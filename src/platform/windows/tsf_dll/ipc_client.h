@@ -1,8 +1,9 @@
 #pragma once
 
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <string>
-#include "../../../shared/ipc_protocol.h"
+#include <cstdint>
 
 namespace suyan {
 
@@ -11,27 +12,41 @@ public:
     IPCClient();
     ~IPCClient();
 
+    IPCClient(const IPCClient&) = delete;
+    IPCClient& operator=(const IPCClient&) = delete;
+
     bool connect();
     void disconnect();
-    bool isConnected() const { return m_pipe != INVALID_HANDLE_VALUE; }
+    bool isConnected() const;
     bool ensureServer();
 
-    uint32_t startSession();
-    void endSession();
-    bool testKey(uint32_t vk, uint32_t modifiers);
-    bool processKey(uint32_t vk, uint32_t modifiers);
-    bool getCommitText(std::wstring& text);
-    void updatePosition(int x, int y, int height);
+    bool processKey(uint32_t vk, uint32_t modifiers, std::wstring& commitText);
+    void updateCursor(int16_t x, int16_t y, int16_t width, int16_t height);
     void focusIn();
     void focusOut();
+    void toggleMode();
+    void toggleLayout();
+    bool queryMode();
+
+    uint32_t sessionId() const { return m_sessionId; }
 
 private:
-    uint32_t send(IPCCommand cmd, uint32_t p1 = 0, uint32_t p2 = 0);
-    bool readData(std::wstring& data);
+    bool sendRequest(uint32_t cmd, uint32_t param1, uint32_t param2,
+                     uint32_t* result, std::wstring* data);
+    bool handshake();
+    bool tryConnect();
+    bool startServer();
+    bool waitForServer(DWORD timeoutMs);
+    std::wstring getServerPath();
 
     HANDLE m_pipe;
     uint32_t m_sessionId;
-    wchar_t m_buffer[4096];
+    bool m_connected;
+
+    static constexpr int MAX_CONNECT_RETRIES = 3;
+    static constexpr DWORD CONNECT_RETRY_DELAY_MS = 100;
+    static constexpr DWORD SERVER_WAIT_TIMEOUT_MS = 3000;
+    static constexpr DWORD PIPE_TIMEOUT_MS = 5000;
 };
 
-} // namespace suyan
+}  // namespace suyan

@@ -179,25 +179,32 @@ QSize CandidateView::calculateMinimumSize() const {
                 height += maxRowsInAnyCol * candidateHeight;
                 height += (maxRowsInAnyCol - 1) * theme_.candidateSpacing;
             } else {
-                // 横排展开：多行布局（原有逻辑）
-                // 计算每行的最大宽度
-                int maxRowWidth = 0;
+                // 横排展开：多行布局
+                // 计算每列的最大宽度（与绘制逻辑保持一致）
+                std::vector<int> colWidths(pageSize_, 0);
                 for (int row = 0; row < groupCount; ++row) {
-                    int rowWidth = 0;
                     int startIdx = row * pageSize_;
                     int endIdx = std::min(startIdx + pageSize_, static_cast<int>(candidates_.size()));
-                    
                     for (int i = startIdx; i < endIdx; ++i) {
-                        rowWidth += calculateCandidateWidth(candidates_[i]);
-                        rowWidth += theme_.candidateSpacing;
+                        int col = i - startIdx;
+                        int w = calculateCandidateWidth(candidates_[i]);
+                        if (w > colWidths[col]) {
+                            colWidths[col] = w;
+                        }
                     }
-                    if (endIdx > startIdx) {
-                        rowWidth -= theme_.candidateSpacing;
-                    }
-                    maxRowWidth = std::max(maxRowWidth, rowWidth);
                 }
                 
-                width = std::max(width, maxRowWidth);
+                // 总宽度 = 所有列宽度之和 + 列间距
+                int totalWidth = 0;
+                for (int col = 0; col < pageSize_ && colWidths[col] > 0; ++col) {
+                    totalWidth += colWidths[col];
+                    totalWidth += theme_.candidateSpacing;
+                }
+                if (totalWidth > 0) {
+                    totalWidth -= theme_.candidateSpacing;
+                }
+                
+                width = std::max(width, totalWidth);
                 height += groupCount * candidateHeight;
                 height += (groupCount - 1) * theme_.candidateSpacing;
             }
@@ -231,7 +238,7 @@ QSize CandidateView::calculateMinimumSize() const {
     
     // 确保最小尺寸
     width = std::max(width, 100);
-    height = std::max(height, 30);
+    height = std::max(height, 40);
     
     cachedSize_ = QSize(width, height);
     layoutDirty_ = false;
@@ -684,23 +691,33 @@ int CandidateView::calculateCandidateHeight() const {
     QFont font = getCandidateFont();
     QFontMetrics fm(font);
     int textHeight = std::max(fm.height(), fm.lineSpacing());
-    return textHeight + 8;
+    return textHeight + 12;
 }
 
 int CandidateView::calculateCandidateWidth(const CandidateItem& candidate) const {
-    int width = 8;  // 左右内边距
+    int width = 16;  // 左右内边距
     
     // 序号标签宽度
     QFont labelFont = getLabelFont();
     QFontMetrics labelFm(labelFont);
     QString label = QString::number(candidate.index) + ".";
-    width += labelFm.horizontalAdvance(label) + 4;
+    width += labelFm.horizontalAdvance(label) + 6;
     
     // 候选词文本宽度
     QFont candidateFont = getCandidateFont();
     QFontMetrics candidateFm(candidateFont);
     QString text = QString::fromStdString(candidate.text);
-    width += candidateFm.horizontalAdvance(text);
+    
+    // 使用 boundingRect 获取更准确的宽度（对 emoji 更准确）
+    QRect textBounds = candidateFm.boundingRect(text);
+    int advanceWidth = candidateFm.horizontalAdvance(text);
+    int textWidth = std::max(advanceWidth, textBounds.width());
+    
+    // 某些 CJK 字符（如"巳"、"匹"）的实际渲染宽度超出 metrics 报告值
+    // 添加固定边距确保不被截断
+    textWidth += 6;
+    
+    width += textWidth;
     
     // 注释宽度（如果有且启用显示）
     if (showComment_ && !candidate.comment.empty()) {
@@ -714,7 +731,7 @@ int CandidateView::calculateCandidateWidth(const CandidateItem& candidate) const
 }
 
 int CandidateView::calculateCandidateWidthExpanded(const CandidateItem& candidate, bool showLabel) const {
-    int width = 8;  // 左右内边距
+    int width = 12;
     
     // 序号标签宽度（仅当前行显示）
     if (showLabel) {
@@ -728,7 +745,16 @@ int CandidateView::calculateCandidateWidthExpanded(const CandidateItem& candidat
     QFont candidateFont = getCandidateFont();
     QFontMetrics candidateFm(candidateFont);
     QString text = QString::fromStdString(candidate.text);
-    width += candidateFm.horizontalAdvance(text);
+    
+    // 使用 boundingRect 获取更准确的宽度（对 emoji 更准确）
+    QRect textBounds = candidateFm.boundingRect(text);
+    int advanceWidth = candidateFm.horizontalAdvance(text);
+    int textWidth = std::max(advanceWidth, textBounds.width());
+    
+    // 某些 CJK 字符的实际渲染宽度超出 metrics 报告值
+    textWidth += 6;
+    
+    width += textWidth;
     
     // 注释宽度（如果有且启用显示）
     if (showComment_ && !candidate.comment.empty()) {

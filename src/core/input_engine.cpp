@@ -16,7 +16,6 @@
 #include "platform_bridge.h"
 #include "rime_wrapper.h"
 #include <cctype>
-#include <iostream>
 
 // 再次取消 Bool 宏定义（rime_api.h 可能重新定义）
 #ifdef Bool
@@ -41,21 +40,16 @@ bool InputEngine::initialize(const std::string& userDataDir,
         return true;
     }
 
-    // 初始化 RimeWrapper
     auto& rime = RimeWrapper::instance();
     if (!rime.initialize(userDataDir, sharedDataDir, "SuYan")) {
-        std::cerr << "InputEngine: Failed to initialize RimeWrapper" << std::endl;
         return false;
     }
 
-    // 启动维护任务并等待完成
     rime.startMaintenance(false);
     rime.joinMaintenanceThread();
 
-    // 创建会话
     sessionId_ = rime.createSession();
     if (sessionId_ == 0) {
-        std::cerr << "InputEngine: Failed to create RIME session" << std::endl;
         return false;
     }
 
@@ -295,56 +289,32 @@ bool InputEngine::handleChineseMode(int keyCode, int modifiers) {
         auto menu = rime.getCandidateMenu(sessionId_);
         currentPinyin = rime.getRawInput(sessionId_);
         
-        // 空格键选择首选候选词（非展开模式）
         if (!isExpanded_ && keyCode == KeyCode::Space && !menu.candidates.empty()) {
             selectedCandidateText = menu.candidates[0].text;
-            std::cout << "InputEngine: Space key, selecting first candidate: '" 
-                      << selectedCandidateText << "' for pinyin: '" << currentPinyin << "'" << std::endl;
         }
-        // 数字键选择对应候选词（1-9）
         else if (keyCode >= '1' && keyCode <= '9' && modifiers == 0) {
-            int candidateIndex = keyCode - '1';  // 转换为 0-based
+            int candidateIndex = keyCode - '1';
             if (candidateIndex < static_cast<int>(menu.candidates.size())) {
                 selectedCandidateText = menu.candidates[candidateIndex].text;
-                std::cout << "InputEngine: Number key " << (char)keyCode 
-                          << ", selecting candidate[" << candidateIndex << "]: '" 
-                          << selectedCandidateText << "' for pinyin: '" << currentPinyin << "'" << std::endl;
-            }
-            // 打印所有候选词用于调试
-            std::cout << "InputEngine: All candidates for '" << currentPinyin << "':" << std::endl;
-            for (size_t i = 0; i < menu.candidates.size(); ++i) {
-                std::cout << "  [" << i << "] " << menu.candidates[i].text << std::endl;
             }
         }
     }
 
-    // 将按键传递给 RIME
     bool processed = rime.processKey(sessionId_, keyCode, modifiers);
 
-    // 检查是否有提交的文本
     std::string commitText = rime.getCommitText(sessionId_);
     if (!commitText.empty()) {
-        // 更新选中候选词的词频
         if (frequencyLearningEnabled_ && !selectedCandidateText.empty()) {
             updateFrequencyForSelectedCandidate(selectedCandidateText, currentPinyin);
         }
         
-        // 通过回调提交文本（回调会调用 MacOSBridge::commitText）
         notifyCommitText(commitText);
         
-        // 提交后重置导航状态
         expandedCandidates_.clear();
         currentRow_ = 0;
         currentCol_ = 0;
-        
-        // 调试：检查提交后是否还有剩余输入
-        std::string remainingInput = rime.getRawInput(sessionId_);
-        if (!remainingInput.empty()) {
-            std::cout << "InputEngine: After commit, remaining input: " << remainingInput << std::endl;
-        }
     }
 
-    // 更新状态
     updateState();
     notifyStateChanged();
 
@@ -352,7 +322,6 @@ bool InputEngine::handleChineseMode(int keyCode, int modifiers) {
 }
 
 bool InputEngine::handleEnglishMode(int keyCode, int modifiers) {
-    // 英文模式：Shift 键切换回中文（由 IMKBridge 处理）
     // 英文模式下不处理任何按键，直接传递给应用
     // 返回 false 让系统/应用处理这个按键
     return false;
@@ -443,13 +412,7 @@ bool InputEngine::selectCandidate(int index) {
                 updateFrequencyForSelectedCandidate(selectedText, currentPinyin);
             }
             
-            // 通过回调提交文本
             notifyCommitText(commitText);
-            
-            // 调试：检查提交后是否还有剩余输入
-            std::string remainingInput = rime.getRawInput(sessionId_);
-            std::cout << "InputEngine::selectCandidate: commitText='" << commitText 
-                      << "', remainingInput='" << remainingInput << "'" << std::endl;
         }
 
         updateState();
@@ -826,16 +789,10 @@ void InputEngine::updateFrequencyForSelectedCandidate(const std::string& text,
     
     auto& freqMgr = FrequencyManager::instance();
     if (!freqMgr.isInitialized()) {
-        // FrequencyManager 未初始化，跳过词频更新
         return;
     }
     
-    // 更新词频
-    bool success = freqMgr.updateFrequency(text, pinyin);
-    if (success) {
-        std::cout << "InputEngine: Updated frequency for '" << text 
-                  << "' (pinyin: " << pinyin << ")" << std::endl;
-    }
+    freqMgr.updateFrequency(text, pinyin);
 }
 
 std::vector<InputCandidate> InputEngine::applySortingWithUserFrequency(

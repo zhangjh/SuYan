@@ -170,4 +170,114 @@ if(WIN32)
     if(MSVC)
         target_compile_options(cursor_position_test PRIVATE /utf-8)
     endif()
+    
+    # IPC 集成测试
+    # Feature: windows-platform-support
+    # Task 5: Checkpoint - IPC 通信验证
+    add_executable(ipc_integration_test platform/windows/ipc_integration_test.cpp)
+    target_link_libraries(ipc_integration_test PRIVATE suyan_core)
+    target_include_directories(ipc_integration_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(ipc_integration_test PRIVATE /utf-8)
+    endif()
+endif()
+
+# TSF 按键处理属性测试
+# Feature: windows-platform-support
+# Task 6.3: 编写按键处理属性测试
+# Property 2: Letter Key Interception
+# Property 3: Non-Input Key Pass-Through
+# Property 4: Digit Key as Selection in Composing State
+# Validates: Requirements 4.1, 4.2, 4.9
+add_executable(tsf_key_handling_property_test platform/windows/tsf_key_handling_property_test.cpp)
+if(MSVC)
+    target_compile_options(tsf_key_handling_property_test PRIVATE /utf-8)
+endif()
+
+# Unicode 字符提交属性测试
+# Feature: windows-platform-support
+# Task 6.5: 编写 Unicode 字符提交属性测试
+# Property 6: Unicode Character Commit
+# Validates: Requirements 5.4
+add_executable(unicode_commit_property_test platform/windows/unicode_commit_property_test.cpp)
+if(MSVC)
+    target_compile_options(unicode_commit_property_test PRIVATE /utf-8)
+endif()
+
+
+# ========== IPC 协议测试 ==========
+
+# IPC 消息序列化属性测试
+# Feature: windows-platform-support
+# Property 1: IPC Message Round-Trip
+# Validates: Requirements 3.6, 3.7
+add_executable(ipc_protocol_test shared/ipc_protocol_test.cpp)
+target_include_directories(ipc_protocol_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(ipc_protocol_test PRIVATE /utf-8)
+endif()
+
+# 光标坐标编码属性测试
+# Feature: windows-platform-support
+# Property 10: Cursor Position Encoding Round-Trip
+# Validates: Requirements 3.6, 7.5
+add_executable(cursor_position_encoding_test shared/cursor_position_encoding_test.cpp)
+target_include_directories(cursor_position_encoding_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(cursor_position_encoding_test PRIVATE /utf-8)
+endif()
+
+# 光标坐标转换属性测试
+# Feature: windows-platform-support
+# Property 8: Cursor Coordinate Transformation
+# Validates: Requirements 7.5
+add_executable(cursor_coordinate_property_test platform/windows/cursor_coordinate_property_test.cpp)
+target_include_directories(cursor_coordinate_property_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(cursor_coordinate_property_test PRIVATE /utf-8)
+endif()
+
+# 候选窗口边界属性测试
+# Feature: windows-platform-support
+# Property 7: Candidate Window Boundary Containment
+# Validates: Requirements 6.2, 6.3
+add_executable(candidate_window_boundary_property_test ui/candidate_window_boundary_property_test.cpp)
+if(MSVC)
+    target_compile_options(candidate_window_boundary_property_test PRIVATE /utf-8)
+endif()
+
+# 候选窗口位置可视化测试工具
+# Feature: windows-platform-support
+# Task 10.4: 实现候选窗口位置可视化测试工具
+# Validates: Requirements 6.1, 6.2, 6.3
+if(WIN32)
+    add_executable(candidate_window_position_test platform/candidate_position_test.cpp)
+    if(MSVC)
+        target_compile_options(candidate_window_position_test PRIVATE /utf-8)
+    endif()
+endif()
+
+# ========== 端到端集成测试 ==========
+
+# E2E 集成测试
+# Feature: windows-platform-support
+# Task 13: 端到端集成测试
+# Task 13.1: 完整输入流程测试
+# Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 5.1, 5.3, 6.1
+if(WIN32)
+    add_executable(e2e_integration_test platform/windows/e2e_integration_test.cpp)
+    target_include_directories(e2e_integration_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(e2e_integration_test PRIVATE /utf-8)
+    endif()
+    
+    # 多应用测试辅助工具
+    # Feature: windows-platform-support
+    # Task 13.2: 多应用测试
+    # Validates: Requirements 5.1, 6.1
+    add_executable(multi_app_test_helper platform/windows/multi_app_test_helper.cpp)
+    target_include_directories(multi_app_test_helper PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_options(multi_app_test_helper PRIVATE /utf-8)
+    endif()
 endif()

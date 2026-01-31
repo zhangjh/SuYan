@@ -229,14 +229,23 @@ private:
     // 成员变量
     CandidateView* candidateView_ = nullptr;
     QPoint lastCursorPos_;
-    QPoint cursorOffset_{0, 0};  // 默认偏移为0 (由 TSFBridge 控制实际位置)
+    QRect lastCursorRect_;
+    QPoint cursorOffset_{0, 0};
     bool positionInitialized_ = false;
+    QSize lastWindowSize_;
 
     // 信号连接
     QMetaObject::Connection themeConnection_;
     QMetaObject::Connection layoutConnection_;
     QMetaObject::Connection pageSizeConnection_;
 };
+
+#ifdef Q_OS_WIN
+void calculateCandidateWindowPosition(
+    int cursorX, int cursorY, int cursorHeight,
+    int windowWidth, int windowHeight,
+    int& outX, int& outY);
+#endif
 
 } // namespace suyan
 

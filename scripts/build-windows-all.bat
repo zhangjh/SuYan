@@ -8,7 +8,7 @@ setlocal
 
 set ROOT_DIR=%~dp0..
 set BUILD_X64=%ROOT_DIR%\build-win
-set BUILD_X86=%ROOT_DIR%\build-win-x86
+set BUILD_X86=%ROOT_DIR%\build-win32
 
 REM 检查 Qt 路径
 if "%QT_PREFIX%"=="" set QT_PREFIX=C:\Qt\6.7.2\msvc2019_64
@@ -39,7 +39,7 @@ echo ========================================
 if not exist "%BUILD_X86%" mkdir "%BUILD_X86%"
 cmake -G "Visual Studio 17 2022" -A Win32 -S "%ROOT_DIR%" -B "%BUILD_X86%"
 if errorlevel 1 goto :error
-cmake --build "%BUILD_X86%" --config Release
+cmake --build "%BUILD_X86%" --config Release --target SuYan32
 if errorlevel 1 goto :error
 
 REM 复制32位DLL到64位输出目录
@@ -54,7 +54,18 @@ echo.
 echo ========================================
 echo Deploying Qt dependencies...
 echo ========================================
-windeployqt --release --no-translations "%BUILD_X64%\bin\Release\SuYanServer.exe"
+"%QT_PREFIX%\bin\windeployqt" --release --no-translations "%BUILD_X64%\bin\Release\SuYanServer.exe"
+
+REM 复制 vcpkg 依赖
+echo.
+echo ========================================
+echo Copying vcpkg dependencies...
+echo ========================================
+copy /Y "%VCPKG_PREFIX%\bin\yaml-cpp.dll" "%BUILD_X64%\bin\Release\"
+copy /Y "%VCPKG_PREFIX%\bin\sqlite3.dll" "%BUILD_X64%\bin\Release\"
+
+REM 复制 librime
+copy /Y "%ROOT_DIR%\deps\librime\lib\x64\rime.dll" "%BUILD_X64%\bin\Release\"
 
 echo.
 echo ========================================
@@ -64,7 +75,7 @@ echo 64-bit DLL: %BUILD_X64%\bin\Release\SuYan.dll
 echo 32-bit DLL: %BUILD_X64%\bin\Release\SuYan32.dll
 echo Server:     %BUILD_X64%\bin\Release\SuYanServer.exe
 echo.
-echo Next: cd installer ^&^& build_installer.bat
+echo Next: scripts\build_installer.bat
 exit /b 0
 
 :error

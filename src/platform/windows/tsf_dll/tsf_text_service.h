@@ -1,23 +1,26 @@
 #pragma once
 
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <msctf.h>
-#include <olectl.h>
+#include <atomic>
+#include <string>
 #include "ipc_client.h"
+#include "langbar_button.h"
 
 namespace suyan {
 
-// {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 extern const CLSID CLSID_SuYanTextService;
-// {B2C3D4E5-F6A7-8901-BCDE-F12345678901}
 extern const GUID GUID_SuYanProfile;
 
 class TSFTextService : public ITfTextInputProcessorEx,
                        public ITfThreadMgrEventSink,
-                       public ITfKeyEventSink {
+                       public ITfKeyEventSink,
+                       public ITfCompositionSink,
+                       public ITfEditSession {
 public:
     TSFTextService();
-    virtual ~TSFTextService();
+    ~TSFTextService();
 
     // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, void** ppvObj) override;
@@ -46,34 +49,73 @@ public:
     STDMETHODIMP OnKeyUp(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) override;
     STDMETHODIMP OnPreservedKey(ITfContext* pContext, REFGUID rguid, BOOL* pfEaten) override;
 
+    // ITfCompositionSink
+    STDMETHODIMP OnCompositionTerminated(TfEditCookie ecWrite, ITfComposition* pComposition) override;
+
+    // ITfEditSession
+    STDMETHODIMP DoEditSession(TfEditCookie ec) override;
+
+    // Accessors
+    TfClientId getClientId() const { return m_clientId; }
+    ITfThreadMgr* getThreadMgr() const { return m_threadMgr; }
+
+    // Composition management
+    void startComposition(ITfContext* pContext, TfEditCookie ec);
+    void endComposition(ITfContext* pContext, TfEditCookie ec, bool clear);
+    void setCompositionPosition(const RECT& rc);
+    bool isComposing() const { return m_composition != nullptr; }
+    ITfComposition* getComposition() const { return m_composition; }
+
 private:
-    void releaseSinks();
-    void commitText(const std::wstring& text);
-    void updateCursorPosition();
-    uint32_t getModifiers();
+    bool initThreadMgrEventSink();
+    void uninitThreadMgrEventSink();
+    bool initKeyEventSink();
+    void uninitKeyEventSink();
+    bool initLangBarButton();
+    void uninitLangBarButton();
+
+    static void onMenuCallback(UINT menuId);
+
+    void processKeyEvent(WPARAM wParam, LPARAM lParam, BOOL* pfEaten);
+    void updateComposition(ITfContext* pContext);
+    void updateCompositionWindow(ITfContext* pContext, TfEditCookie ec);
+    void requestUpdateCompositionWindow(ITfContext* pContext);
+    void abortComposition();
 
     LONG m_refCount;
     ITfThreadMgr* m_threadMgr;
     TfClientId m_clientId;
     DWORD m_threadMgrEventSinkCookie;
-    IPCClient m_ipc;
+    ITfKeystrokeMgr* m_keystrokeMgr;
     bool m_activated;
+
+    IPCClient m_ipc;
+    LangBarButton* m_langBarButton;
+    ITfLangBarItemMgr* m_langBarItemMgr;
+
+    ITfComposition* m_composition;
+    ITfContext* m_editSessionContext;
+    bool m_composingOnServer;
+    std::wstring m_commitText;
+
+    bool m_testKeyDownPending;
+
+    static TSFTextService* s_instance;
 };
 
 class TSFTextServiceFactory : public IClassFactory {
 public:
-    // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, void** ppvObj) override;
     STDMETHODIMP_(ULONG) AddRef() override;
     STDMETHODIMP_(ULONG) Release() override;
-
-    // IClassFactory
     STDMETHODIMP CreateInstance(IUnknown* pUnkOuter, REFIID riid, void** ppvObj) override;
     STDMETHODIMP LockServer(BOOL fLock) override;
 };
 
-extern TSFTextServiceFactory g_factory;
-extern LONG g_serverLocks;
-extern HMODULE g_hModule;
+extern TSFTextServiceFactory g_classFactory;
+extern std::atomic<LONG> g_dllRefCount;
 
-} // namespace suyan
+void DllAddRef();
+void DllRelease();
+
+}  // namespace suyan

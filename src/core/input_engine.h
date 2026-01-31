@@ -260,6 +260,11 @@ public:
      */
     void setCommitTextCallback(CommitTextCallback callback);
 
+    /**
+     * 获取当前的文字提交回调
+     */
+    CommitTextCallback getCommitTextCallback() const { return commitTextCallback_; }
+
     // ========== 词频学习 ==========
 
     /**

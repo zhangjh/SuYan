@@ -8,6 +8,8 @@
  * 1. 窗口置顶：使用 HWND_TOPMOST 确保在所有窗口之上
  * 2. 焦点控制：设置 WS_EX_NOACTIVATE 防止获取焦点
  * 3. 全屏支持：检测全屏应用并确保窗口可见
+ * 4. 多显示器支持：使用 MonitorFromPoint 获取光标所在显示器
+ * 5. 负坐标支持：正确处理扩展屏幕在主屏幕左侧/上方的情况
  */
 
 #include "candidate_window.h"
@@ -60,6 +62,62 @@ static bool isFullScreenAppRunning() {
 }
 
 /**
+ * 计算候选窗口位置（Windows 特定实现）
+ * 
+ * 使用 MonitorFromPoint 获取光标所在显示器，
+ * 处理屏幕边缘情况，支持负坐标（扩展屏幕）。
+ * 
+ * @param cursorX 光标 X 坐标（屏幕坐标，可为负数）
+ * @param cursorY 光标 Y 坐标（屏幕坐标，可为负数）
+ * @param cursorHeight 光标高度
+ * @param windowWidth 候选窗口宽度
+ * @param windowHeight 候选窗口高度
+ * @param outX 输出：窗口 X 坐标
+ * @param outY 输出：窗口 Y 坐标
+ */
+void calculateCandidateWindowPosition(
+    int cursorX, int cursorY, int cursorHeight,
+    int windowWidth, int windowHeight,
+    int& outX, int& outY)
+{
+    POINT cursorPt = { cursorX, cursorY };
+    HMONITOR hMonitor = MonitorFromPoint(cursorPt, MONITOR_DEFAULTTONEAREST);
+    
+    MONITORINFO mi;
+    mi.cbSize = sizeof(MONITORINFO);
+    
+    if (!hMonitor || !GetMonitorInfoW(hMonitor, &mi)) {
+        outX = cursorX;
+        outY = cursorY + cursorHeight + 2;
+        return;
+    }
+    
+    const RECT& workArea = mi.rcWork;
+    
+    outX = cursorX;
+    outY = cursorY + cursorHeight + 2;
+    
+    if (outX + windowWidth > workArea.right) {
+        outX = workArea.right - windowWidth;
+    }
+    if (outX < workArea.left) {
+        outX = workArea.left;
+    }
+    
+    if (outY + windowHeight > workArea.bottom) {
+        int topY = cursorY - windowHeight - 5;
+        if (topY >= workArea.top) {
+            outY = topY;
+        } else {
+            outY = workArea.bottom - windowHeight;
+            if (outY < workArea.top) {
+                outY = workArea.top;
+            }
+        }
+    }
+}
+
+/**
  * 设置 Windows 窗口属性
  *
  * 配置窗口以满足输入法候选词窗口的特殊需求：
@@ -78,22 +136,13 @@ void CandidateWindow::setupWindowsWindowLevel() {
         return;
     }
     
-    // 获取当前扩展样式
     LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-    
-    // 设置扩展样式：
-    // - WS_EX_NOACTIVATE: 窗口不会被激活（关键！）
-    // - WS_EX_TOPMOST: 置顶窗口
-    // - WS_EX_TOOLWINDOW: 工具窗口，不在任务栏显示
     exStyle |= WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW;
-    
     SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
     
-    // 设置窗口为置顶
     SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     
-    // 禁用 DWM 过渡动画
     BOOL disableTransitions = TRUE;
     DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED,
                           &disableTransitions, sizeof(disableTransitions));
@@ -113,15 +162,31 @@ void CandidateWindow::ensureVisibleInFullScreen() {
         return;
     }
     
-    // 重新设置置顶状态
     SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     
-    // 如果有全屏应用，强制刷新窗口
     if (isFullScreenAppRunning()) {
         InvalidateRect(hwnd, nullptr, FALSE);
         UpdateWindow(hwnd);
     }
+}
+
+/**
+ * 使用 Native Windows API 显示窗口在指定位置
+ */
+void CandidateWindow::showAtNativeImpl(const QPoint& pos) {
+    WId winId = this->winId();
+    if (winId == 0) {
+        return;
+    }
+    
+    HWND hwnd = reinterpret_cast<HWND>(winId);
+    if (!hwnd) {
+        return;
+    }
+    
+    SetWindowPos(hwnd, HWND_TOPMOST, pos.x(), pos.y(), 0, 0,
+                 SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
 } // namespace suyan

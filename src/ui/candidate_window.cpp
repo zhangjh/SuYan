@@ -88,16 +88,21 @@ void CandidateWindow::initWindowFlags() {
 void CandidateWindow::updateCandidates(const InputState& state) {
     candidateView_->updateFromState(state);
     
-    // Property 5: 候选词窗口可见性 = (isComposing && !candidates.empty())
     bool shouldBeVisible = state.isComposing && !state.candidates.empty();
     
     if (shouldBeVisible) {
+#ifdef Q_OS_WIN
+        if (positionInitialized_) {
+            showAtNative(lastCursorRect_);
+        }
+#else
         QSize newSize = candidateView_->sizeHint();
         resize(newSize);
         
         if (positionInitialized_) {
             updatePosition();
         }
+#endif
     } else {
         hideWindow();
     }
@@ -138,6 +143,7 @@ void CandidateWindow::showAt(const QPoint& cursorPos) {
 void CandidateWindow::hideWindow() {
     if (isVisible()) {
         hide();
+        lastWindowSize_ = QSize();
     }
 }
 
@@ -204,38 +210,41 @@ void CandidateWindow::updatePosition() {
 void CandidateWindow::showAtNative(const QRect& cursorRect) {
 #ifdef _WIN32
     QSize newSize = candidateView_->sizeHint();
+    
+    if (lastWindowSize_.isValid()) {
+        if (newSize.width() < lastWindowSize_.width() && 
+            lastWindowSize_.width() - newSize.width() < 50) {
+            newSize.setWidth(lastWindowSize_.width());
+        }
+    }
+    lastWindowSize_ = newSize;
+    
     resize(newSize);
     
     HWND hwnd = (HWND)winId();
     if (!hwnd) return;
     
-    int w = newSize.width();
-    int h = newSize.height();
+    qreal dpr = devicePixelRatioF();
+    int w = static_cast<int>(newSize.width() * dpr);
+    int h = static_cast<int>(newSize.height() * dpr);
     
-    POINT targetPt = { cursorRect.left(), cursorRect.bottom() };
-    HMONITOR hMon = MonitorFromPoint(targetPt, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi;
-    mi.cbSize = sizeof(MONITORINFO);
-    GetMonitorInfoW(hMon, &mi);
-    
-    int x = cursorRect.left();
-    int y = cursorRect.bottom() + 2;
-    
-    if (x + w > mi.rcWork.right) {
-        x = mi.rcWork.right - w;
-        if (x < mi.rcWork.left) {
-            x = mi.rcWork.left;
+    POINT cursorPt = { cursorRect.left(), cursorRect.top() };
+    HMONITOR hMonitor = MonitorFromPoint(cursorPt, MONITOR_DEFAULTTONEAREST);
+    if (hMonitor) {
+        MONITORINFO mi;
+        mi.cbSize = sizeof(MONITORINFO);
+        if (GetMonitorInfoW(hMonitor, &mi)) {
+            int maxWidth = mi.rcWork.right - mi.rcWork.left - 20;
+            if (w > maxWidth) {
+                w = maxWidth;
+            }
         }
     }
     
-    if (y + h > mi.rcWork.bottom) {
-        int topY = cursorRect.top() - h - 5;
-        if (topY >= mi.rcWork.top) {
-            y = topY;
-        } else {
-            y = mi.rcWork.bottom - h;
-        }
-    }
+    int x, y;
+    calculateCandidateWindowPosition(
+        cursorRect.left(), cursorRect.top(), cursorRect.height(),
+        w, h, x, y);
     
     if (!isVisible()) {
         QWidget::setVisible(true);
@@ -243,7 +252,10 @@ void CandidateWindow::showAtNative(const QRect& cursorRect) {
     
     SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
     
-    lastCursorPos_ = cursorRect.bottomLeft();
+    ensureVisibleInFullScreen();
+    
+    lastCursorRect_ = cursorRect;
+    lastCursorPos_ = QPoint(cursorRect.left(), cursorRect.bottom());
     positionInitialized_ = true;
 #else
     showAt(cursorRect.bottomLeft());
