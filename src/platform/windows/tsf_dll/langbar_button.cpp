@@ -258,7 +258,7 @@ void LangBarButton::setMenuCallback(void (*callback)(UINT menuId)) {
 void LangBarButton::loadIcons() {
     m_iconChinese = static_cast<HICON>(LoadImageW(
         g_hInstance,
-        MAKEINTRESOURCEW(101),
+        MAKEINTRESOURCEW(100),
         IMAGE_ICON,
         16, 16,
         LR_DEFAULTCOLOR

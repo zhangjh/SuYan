@@ -17,14 +17,14 @@ endif()
 # Icon resource path
 set(TSF_ICON_FILE "${CMAKE_SOURCE_DIR}/resources/icons/app-icon.ico")
 
-# Generate resource file with icon (ID 101)
+# Generate resource file with icon (ID 100, same as Weasel's IDI_WEASEL)
 set(TSF_RC_FILE "${CMAKE_CURRENT_BINARY_DIR}/tsf_dll_generated.rc")
 file(WRITE "${TSF_RC_FILE}"
 "// Auto-generated resource file
 #include <windows.h>
 
-// Icon resource (ID 101)
-101 ICON \"${TSF_ICON_FILE}\"
+// Icon resource (ID 100)
+100 ICON \"${TSF_ICON_FILE}\"
 
 // Version info
 VS_VERSION_INFO VERSIONINFO

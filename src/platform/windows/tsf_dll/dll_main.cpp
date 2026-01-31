@@ -16,7 +16,7 @@ namespace {
 constexpr wchar_t TSF_CLSID_KEY[] = L"CLSID\\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}";
 constexpr wchar_t TSF_INPROC_KEY[] = L"CLSID\\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}\\InprocServer32";
 constexpr wchar_t TSF_DISPLAY_NAME[] = L"素言输入法";
-constexpr ULONG TSF_ICON_RESOURCE_ID = 101;
+constexpr ULONG TSF_ICON_INDEX = 0;
 
 HRESULT registerServer() {
     wchar_t modulePath[MAX_PATH];
@@ -75,6 +75,13 @@ HRESULT registerTextService() {
         return hr;
     }
 
+    profileMgr->UnregisterProfile(
+        suyan::CLSID_SuYanTextService,
+        MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED),
+        suyan::GUID_SuYanProfile,
+        0
+    );
+
     wchar_t modulePath[MAX_PATH];
     GetModuleFileNameW(suyan::g_hInstance, modulePath, MAX_PATH);
 
@@ -86,7 +93,7 @@ HRESULT registerTextService() {
         static_cast<ULONG>(wcslen(TSF_DISPLAY_NAME)),
         modulePath,
         static_cast<ULONG>(wcslen(modulePath)),
-        TSF_ICON_RESOURCE_ID,
+        TSF_ICON_INDEX,
         nullptr,
         0,
         TRUE,
