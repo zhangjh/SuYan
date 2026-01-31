@@ -211,13 +211,15 @@ Section "MainSection" SEC01
     ; ========================================
     ; Register TSF DLLs
     ; ========================================
-    ; Register the 64-bit DLL from System32
-    ExecWait 'regsvr32.exe /s "$SYSDIR\SuYan.dll"'
-    
-    ; Register the 32-bit DLL from SysWOW64
+    ; Register the 32-bit DLL from SysWOW64 FIRST
+    ; (so 64-bit registration overwrites the IconFile path)
     ${If} ${RunningX64}
         ExecWait '$WINDIR\SysWOW64\regsvr32.exe /s "$WINDIR\SysWOW64\SuYan32.dll"'
     ${EndIf}
+    
+    ; Register the 64-bit DLL from System32 LAST
+    ; (this sets the correct IconFile path to System32\SuYan.dll)
+    ExecWait 'regsvr32.exe /s "$SYSDIR\SuYan.dll"'
     
     ; Store DLL paths in registry for uninstaller
     WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "DLL64Path" "$SYSDIR\SuYan.dll"

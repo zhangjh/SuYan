@@ -95,6 +95,18 @@ target_link_libraries(${TSF_DLL_NAME} PRIVATE
     user32
 )
 
+# Generate exports.def file in build directory
+set(TSF_DEF_FILE "${CMAKE_CURRENT_BINARY_DIR}/exports.def")
+file(WRITE "${TSF_DEF_FILE}"
+"LIBRARY ${TSF_DLL_NAME}
+EXPORTS
+    DllMain PRIVATE
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
+    DllRegisterServer PRIVATE
+    DllUnregisterServer PRIVATE
+")
+
 # Compiler options
 if(MSVC)
     target_compile_options(${TSF_DLL_NAME} PRIVATE
@@ -104,9 +116,8 @@ if(MSVC)
         /MP
     )
     
-    # Generate .def file for exports
     set_target_properties(${TSF_DLL_NAME} PROPERTIES
-        LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/exports.def\""
+        LINK_FLAGS "/DEF:\"${TSF_DEF_FILE}\""
     )
 endif()
 
@@ -116,17 +127,6 @@ set_target_properties(${TSF_DLL_NAME} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}"
 )
-
-# Generate exports.def file
-file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/exports.def"
-"LIBRARY ${TSF_DLL_NAME}
-EXPORTS
-    DllMain PRIVATE
-    DllGetClassObject PRIVATE
-    DllCanUnloadNow PRIVATE
-    DllRegisterServer PRIVATE
-    DllUnregisterServer PRIVATE
-")
 
 # Status output
 message(STATUS "TSF DLL Configuration:")

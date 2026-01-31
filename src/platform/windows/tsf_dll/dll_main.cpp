@@ -83,7 +83,7 @@ HRESULT registerTextService() {
     );
 
     wchar_t modulePath[MAX_PATH];
-    GetModuleFileNameW(suyan::g_hInstance, modulePath, MAX_PATH);
+    DWORD pathLen = GetModuleFileNameW(suyan::g_hInstance, modulePath, MAX_PATH);
 
     hr = profileMgr->RegisterProfile(
         suyan::CLSID_SuYanTextService,
@@ -92,7 +92,7 @@ HRESULT registerTextService() {
         TSF_DISPLAY_NAME,
         static_cast<ULONG>(wcslen(TSF_DISPLAY_NAME)),
         modulePath,
-        static_cast<ULONG>(wcslen(modulePath)),
+        pathLen,
         TSF_ICON_INDEX,
         nullptr,
         0,
